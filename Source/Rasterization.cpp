@@ -178,6 +178,11 @@ static inline bool IsTopLeftEdge( const SRasterizerVertex& v0, const SRasterizer
     return isLeft || isTop;
 }
 
+static inline float BarycentricInterplation( float attr0, float attr1, float attr2, float w0, float w1, float w2 )
+{
+    return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
+}
+
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
     // Calculate bounding box of the triangle and crop with the viewport
@@ -222,21 +227,21 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     float bb12 = b12 * rcpDoubleSignedArea;
     float bb20 = b20 * rcpDoubleSignedArea;
 
-    float z_row = v0.m_Z * bw0_row + ( v1.m_Z * bw1_row + ( v2.m_Z * bw2_row ) ); // Z at the minimum of the bounding box
-    float z_a = v0.m_Z * ba12 + ( v1.m_Z * ba20 + ( v2.m_Z * ba01 ) ); // Horizontal Z increment
-    float z_b = v0.m_Z * bb12 + ( v1.m_Z * bb20 + ( v2.m_Z * bb01 ) ); // Vertical Z increment
+    float z_row = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, bw0_row, bw1_row, bw2_row ); // Z at the minimum of the bounding box
+    float z_a = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, ba12, ba20, ba01 ); // Horizontal Z increment
+    float z_b = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, bb12, bb20, bb01 ); // Vertical Z increment
     
-    float rcpw_row = v0.m_Rcpw * bw0_row + ( v1.m_Rcpw * bw1_row + ( v2.m_Rcpw * bw2_row ) ); // rcpw at the minimum of the bounding box
-    float rcpw_a = v0.m_Rcpw * ba12 + ( v1.m_Rcpw * ba20 + ( v2.m_Rcpw * ba01 ) ); // Horizontal rcpw increment
-    float rcpw_b = v0.m_Rcpw * bb12 + ( v1.m_Rcpw * bb20 + ( v2.m_Rcpw * bb01 ) ); // Vertical rcpw increment
+    float rcpw_row = BarycentricInterplation( v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, bw0_row, bw1_row, bw2_row ); // rcpw at the minimum of the bounding box
+    float rcpw_a = BarycentricInterplation( v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, ba12, ba20, ba01 ); // Horizontal rcpw increment
+    float rcpw_b = BarycentricInterplation( v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, bb12, bb20, bb01 ); // Vertical rcpw increment
 
-    float texU_row = v0.m_TexcoordU * bw0_row + ( v1.m_TexcoordU * bw1_row + ( v2.m_TexcoordU * bw2_row ) ); // texU at the minimum of the bounding box
-    float texU_a = v0.m_TexcoordU * ba12 + ( v1.m_TexcoordU * ba20 + ( v2.m_TexcoordU * ba01 ) ); // Horizontal texU increment
-    float texU_b = v0.m_TexcoordU * bb12 + ( v1.m_TexcoordU * bb20 + ( v2.m_TexcoordU * bb01 ) ); // Vertical texU increment
+    float texU_row = BarycentricInterplation( v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, bw0_row, bw1_row, bw2_row ); // texU at the minimum of the bounding box
+    float texU_a = BarycentricInterplation( v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, ba12, ba20, ba01 ); // Horizontal texU increment
+    float texU_b = BarycentricInterplation( v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, bb12, bb20, bb01 ); // Vertical texU increment
 
-    float texV_row = v0.m_TexcoordV * bw0_row + ( v1.m_TexcoordV * bw1_row + ( v2.m_TexcoordV * bw2_row ) ); // texV at the minimum of the bounding box
-    float texV_a = v0.m_TexcoordV * ba12 + ( v1.m_TexcoordV * ba20 + ( v2.m_TexcoordV * ba01 ) ); // Horizontal texV increment
-    float texV_b = v0.m_TexcoordV * bb12 + ( v1.m_TexcoordV * bb20 + ( v2.m_TexcoordV * bb01 ) ); // Vertical texV increment
+    float texV_row = BarycentricInterplation( v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, bw0_row, bw1_row, bw2_row ); // texV at the minimum of the bounding box
+    float texV_a = BarycentricInterplation( v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, ba12, ba20, ba01 ); // Horizontal texV increment
+    float texV_b = BarycentricInterplation( v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, bb12, bb20, bb01 ); // Vertical texV increment
 
     // Apply top left rule
     const int32_t topLeftBias0 = IsTopLeftEdge( v1, v2 ) ? 0 : -1;
