@@ -31,5 +31,7 @@ namespace Rasterizer
 
     void SetBaseColor( const float* color );
 
+    void SetTexture( const SImage& image );
+
     void Draw( uint32_t baseVertexIndex, uint32_t trianglesCount );
 }

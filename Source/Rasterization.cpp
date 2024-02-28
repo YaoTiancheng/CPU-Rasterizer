@@ -42,6 +42,7 @@ static const float* s_StreamSourceTexV = nullptr;
 
 static SImage s_RenderTarget = { 0 };
 static SImage s_DepthTarget = { 0 };
+static SImage s_Texture = { 0 };
 
 static void __vectorcall TransformVec3Stream( __m128 m00, __m128 m01, __m128 m02, __m128 m03,
     __m128 m10, __m128 m11, __m128 m12, __m128 m13,
@@ -183,6 +184,20 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
+static inline void SampleTexture_PointClamp( float texU, float texV, float* r, float* g, float* b, float* a )
+{
+    const int32_t maxX = s_Texture.m_Width - 1;
+    const int32_t maxY = s_Texture.m_Height - 1;
+    const int32_t texelPosX = std::max( std::min( int32_t( texU * maxX + 0.5f ), maxX ), 0 );
+    const int32_t texelPosY = std::max( std::min( int32_t( texV * maxY + 0.5f ), maxY ), 0 );
+    const uint32_t texel = ( (uint32_t*)s_Texture.m_Bits )[ texelPosY * s_Texture.m_Width + texelPosX ];
+    const float denorm = 1.f / 255.f;
+    *a = ( texel >> 24 & 0xFF ) * denorm;
+    *r = ( texel >> 16 & 0xFF ) * denorm;
+    *g = ( texel >> 8 & 0xFF ) * denorm;
+    *b = ( texel & 0xFF ) * denorm;
+}
+
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
     // Calculate bounding box of the triangle and crop with the viewport
@@ -278,12 +293,18 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     float texcoordU = texU * w;
                     float texcoordV = texV * w;
 
-                    bool isWhite = ( int32_t( texcoordU / 0.1f ) + int32_t( texcoordV / 0.1f ) ) % 2 == 0;
-                    uint8_t r = isWhite ? 255 : uint8_t( s_BaseColor[ 0 ] * 255.f + 0.5f );
-                    uint8_t g = isWhite ? 255 : uint8_t( s_BaseColor[ 1 ] * 255.f + 0.5f );
-                    uint8_t b = isWhite ? 255 : uint8_t( s_BaseColor[ 2 ] * 255.f + 0.5f );
+                    float r, g, b, a;
+                    SampleTexture_PointClamp( texcoordU, texcoordV, &r, &g, &b, &a );
+                    r *= s_BaseColor[ 0 ];
+                    g *= s_BaseColor[ 1 ];
+                    b *= s_BaseColor[ 2 ];
+                    a *= s_BaseColor[ 3 ];
+
+                    uint8_t ri = uint8_t( r * 255.f + 0.5f );
+                    uint8_t gi = uint8_t( g * 255.f + 0.5f );
+                    uint8_t bi = uint8_t( b * 255.f + 0.5f );
                     uint32_t* dstColor = (uint32_t*)s_RenderTarget.m_Bits + imgY * s_RenderTarget.m_Width + imgX;
-                    *dstColor = 0xFF000000 | r << 16 | g << 8 | b;
+                    *dstColor = 0xFF000000 | ri << 16 | gi << 8 | bi;
                 }
             }
 
@@ -349,6 +370,11 @@ void Rasterizer::SetDepthTarget( const SImage& image )
 void Rasterizer::SetBaseColor( const float* color )
 {
     memcpy( s_BaseColor, color, sizeof( s_BaseColor ) );
+}
+
+void Rasterizer::SetTexture( const SImage& image )
+{
+    s_Texture = image;
 }
 
 void Rasterizer::Draw( uint32_t baseVertexIndex, uint32_t trianglesCount )

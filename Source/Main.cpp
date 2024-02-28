@@ -128,7 +128,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
+static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
 {
     vertexBuffer->Allocate( 36 );
 
@@ -197,13 +197,32 @@ static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     depthTarget->m_Width = width;
     depthTarget->m_Height = height;
     depthTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
+
+    texture->m_Width = 256;
+    texture->m_Height = 256;
+    texture->m_Bits = (uint8_t*)_aligned_malloc( texture->m_Width * texture->m_Height * 4, 16 );
+
+    // initialize the texture with a checkerboard pattern
+    uint32_t* texelPtr = (uint32_t*)texture->m_Bits;
+    for ( uint32_t texelY = 0; texelY < texture->m_Height; ++texelY )
+    {
+        for ( uint32_t texelX = 0; texelX < texture->m_Width; ++texelX )
+        {
+            uint32_t blockX = texelX / 32;
+            uint32_t blockY = texelY / 32;
+            bool isWhite = ( blockX + blockY ) % 2 == 0;
+            *texelPtr = isWhite ? 0xFFFFFFFF : 0;
+            ++texelPtr;
+        }
+    }
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, SVertexBuffer* vertexBuffer )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer )
 {
     vertexBuffer->Free();
     _aligned_free( renderTarget->m_Bits );
     _aligned_free( depthTarget->m_Bits );
+    _aligned_free( texture->m_Bits );
 }
 
 static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
@@ -299,9 +318,10 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
     Rasterizer::SImage renderTarget;
     Rasterizer::SImage depthTarget;
+    Rasterizer::SImage texture;
     SVertexBuffer vertexBuffer;
     uint32_t triangleCount;
-    CreateRenderData( width, height, &renderTarget, &depthTarget, &vertexBuffer, &triangleCount );
+    CreateRenderData( width, height, &renderTarget, &depthTarget, &texture, &vertexBuffer, &triangleCount );
 
     Rasterizer::SViewport viewport;
     viewport.m_Left = 0;
@@ -314,6 +334,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
+    Rasterizer::SetTexture( texture );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 
@@ -351,7 +372,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
     }
 
-    DestroyRenderData( &renderTarget, &depthTarget, &vertexBuffer );
+    DestroyRenderData( &renderTarget, &depthTarget, &texture, &vertexBuffer );
 
     DestroyWindow( hWnd );
 
