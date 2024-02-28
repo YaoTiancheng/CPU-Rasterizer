@@ -11,6 +11,7 @@ struct SRasterizerVertex
 {
     int32_t m_X;
     int32_t m_Y;
+    float m_Z;
     float m_Rcpw;
     float m_TexcoordU;
     float m_TexcoordV;
@@ -40,6 +41,7 @@ static const float* s_StreamSourceTexU = nullptr;
 static const float* s_StreamSourceTexV = nullptr;
 
 static SImage s_RenderTarget = { 0 };
+static SImage s_DepthTarget = { 0 };
 
 static void __vectorcall TransformVec3Stream( __m128 m00, __m128 m01, __m128 m02, __m128 m03,
     __m128 m10, __m128 m11, __m128 m12, __m128 m13,
@@ -219,6 +221,10 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     float bb01 = b01 * rcpDoubleSignedArea;
     float bb12 = b12 * rcpDoubleSignedArea;
     float bb20 = b20 * rcpDoubleSignedArea;
+
+    float z_row = v0.m_Z * bw0_row + ( v1.m_Z * bw1_row + ( v2.m_Z * bw2_row ) ); // Z at the minimum of the bounding box
+    float z_a = v0.m_Z * ba12 + ( v1.m_Z * ba20 + ( v2.m_Z * ba01 ) ); // Horizontal Z increment
+    float z_b = v0.m_Z * bb12 + ( v1.m_Z * bb20 + ( v2.m_Z * bb01 ) ); // Vertical Z increment
     
     float rcpw_row = v0.m_Rcpw * bw0_row + ( v1.m_Rcpw * bw1_row + ( v2.m_Rcpw * bw2_row ) ); // rcpw at the minimum of the bounding box
     float rcpw_a = v0.m_Rcpw * ba12 + ( v1.m_Rcpw * ba20 + ( v2.m_Rcpw * ba01 ) ); // Horizontal rcpw increment
@@ -249,6 +255,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
 
         int32_t imgX = imgMinX;
 
+        float z = z_row;
         float rcpw = rcpw_row;
         float texU = texU_row;
         float texV = texV_row;
@@ -257,22 +264,29 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         {
             if ( ( w0 | w1 | w2 ) >= 0 ) // counter-clockwise triangle has positive area
             {
-                float w = 1.0f / rcpw;
-                float texcoordU = texU * w;
-                float texcoordV = texV * w;
+                float* dstDepth = (float*)s_DepthTarget.m_Bits + imgY * s_DepthTarget.m_Width + imgX;
+                if ( z < *dstDepth )
+                {
+                    *dstDepth = z;
 
-                bool isWhite = ( int32_t( texcoordU / 0.1f ) + int32_t( texcoordV / 0.1f ) ) % 2 == 0;
-                uint8_t r = isWhite ? 255 : uint8_t( s_BaseColor[ 0 ] * 255.f + 0.5f );
-                uint8_t g = isWhite ? 255 : uint8_t( s_BaseColor[ 1 ] * 255.f + 0.5f );
-                uint8_t b = isWhite ? 255 : uint8_t( s_BaseColor[ 2 ] * 255.f + 0.5f );
-                uint32_t* bits = (uint32_t*)s_RenderTarget.m_Bits;
-                bits[ imgY * s_RenderTarget.m_Width + imgX ] = 0xFF000000 | r << 16 | g << 8 | b;
+                    float w = 1.0f / rcpw;
+                    float texcoordU = texU * w;
+                    float texcoordV = texV * w;
+
+                    bool isWhite = ( int32_t( texcoordU / 0.1f ) + int32_t( texcoordV / 0.1f ) ) % 2 == 0;
+                    uint8_t r = isWhite ? 255 : uint8_t( s_BaseColor[ 0 ] * 255.f + 0.5f );
+                    uint8_t g = isWhite ? 255 : uint8_t( s_BaseColor[ 1 ] * 255.f + 0.5f );
+                    uint8_t b = isWhite ? 255 : uint8_t( s_BaseColor[ 2 ] * 255.f + 0.5f );
+                    uint32_t* dstColor = (uint32_t*)s_RenderTarget.m_Bits + imgY * s_RenderTarget.m_Width + imgX;
+                    *dstColor = 0xFF000000 | r << 16 | g << 8 | b;
+                }
             }
 
             w0 += a12;
             w1 += a20;
             w2 += a01;
 
+            z += z_a;
             rcpw += rcpw_a;
             texU += texU_a;
             texV += texV_a;
@@ -282,6 +296,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         w1_row += b20;
         w2_row += b01;
 
+        z_row += z_b;
         rcpw_row += rcpw_b;
         texU_row += texU_b;
         texV_row += texV_b;
@@ -319,6 +334,11 @@ void Rasterizer::SetViewport( const SViewport& viewport )
 void Rasterizer::SetRenderTarget( const SImage& image )
 {
     s_RenderTarget = image;
+}
+
+void Rasterizer::SetDepthTarget( const SImage& image )
+{
+    s_DepthTarget = image;
 }
 
 void Rasterizer::SetBaseColor( const float* color )
@@ -372,9 +392,9 @@ void Rasterizer::Draw( uint32_t baseVertexIndex, uint32_t trianglesCount )
         for ( uint32_t i = 0; i < trianglesCount; ++i )
         {
             uint32_t vertexIndexBase = i * 3;
-            SRasterizerVertex v0 = { streamPosXi[ vertexIndexBase ], streamPosYi[ vertexIndexBase ], streamPosW[ vertexIndexBase ], streamTexU[ vertexIndexBase ], streamTexV[ vertexIndexBase ] };
-            SRasterizerVertex v1 = { streamPosXi[ vertexIndexBase + 1 ], streamPosYi[ vertexIndexBase + 1 ], streamPosW[ vertexIndexBase + 1 ], streamTexU[ vertexIndexBase + 1 ], streamTexV[ vertexIndexBase + 1 ] };
-            SRasterizerVertex v2 = { streamPosXi[ vertexIndexBase + 2 ], streamPosYi[ vertexIndexBase + 2 ], streamPosW[ vertexIndexBase + 2 ], streamTexU[ vertexIndexBase + 2 ], streamTexV[ vertexIndexBase + 2 ] };
+            SRasterizerVertex v0 = { streamPosXi[ vertexIndexBase ], streamPosYi[ vertexIndexBase ], streamPosZ[ vertexIndexBase ], streamPosW[ vertexIndexBase ], streamTexU[ vertexIndexBase ], streamTexV[ vertexIndexBase ] };
+            SRasterizerVertex v1 = { streamPosXi[ vertexIndexBase + 1 ], streamPosYi[ vertexIndexBase + 1 ], streamPosZ[ vertexIndexBase + 1 ], streamPosW[ vertexIndexBase + 1 ], streamTexU[ vertexIndexBase + 1 ], streamTexV[ vertexIndexBase + 1 ] };
+            SRasterizerVertex v2 = { streamPosXi[ vertexIndexBase + 2 ], streamPosYi[ vertexIndexBase + 2 ], streamPosZ[ vertexIndexBase + 2 ], streamPosW[ vertexIndexBase + 2 ], streamTexU[ vertexIndexBase + 2 ], streamTexV[ vertexIndexBase + 2 ] };
             RasterizeTriangle( v0, v1, v2 );
         }
     }

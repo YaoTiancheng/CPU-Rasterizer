@@ -27,6 +27,8 @@ namespace Rasterizer
 
     void SetRenderTarget( const SImage& image );
 
+    void SetDepthTarget( const SImage& image );
+
     void SetBaseColor( const float* color );
 
     void Draw( uint32_t baseVertexIndex, uint32_t trianglesCount );

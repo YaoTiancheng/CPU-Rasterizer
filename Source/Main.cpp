@@ -128,7 +128,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
+static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
 {
     vertexBuffer->Allocate( 36 );
 
@@ -193,37 +193,65 @@ static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;
     renderTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
+
+    depthTarget->m_Width = width;
+    depthTarget->m_Height = height;
+    depthTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, SVertexBuffer* vertexBuffer )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, SVertexBuffer* vertexBuffer )
 {
     vertexBuffer->Free();
     _aligned_free( renderTarget->m_Bits );
+    _aligned_free( depthTarget->m_Bits );
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
 {
     yall += XMConvertToRadians( 0.5f );
     roll += XMConvertToRadians( 0.3f );
 
     ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
+    float* depthBit = (float*)depthTarget.m_Bits;
+    for ( uint32_t i = 0; i < depthTarget.m_Width * depthTarget.m_Height; ++i )
+    {
+        *depthBit = 1.f;
+        ++depthBit;
+    }
+
+    XMFLOAT4 baseColor[] = { { 0.5f, 0.5f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
 
     XMMATRIX viewMatrix = XMMatrixSet( 1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 4.f, 0.f );
-    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 0.01f, 100.f );
-    XMMATRIX worldMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
-    XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( XMMatrixMultiply( worldMatrix, viewMatrix ), projectionMatrix );
+        0.f, 0.f, 10.f, 1.f );
+    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 2.f, 1000.f );
+    XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
+    XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
 
+    XMINT3 cubeCount( 3, 4, 3 );
+    XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
+    XMFLOAT3 cubeCenterMin( -( cubeCount.x - 1 ) * cubeSpacing.x * 0.5f, -( cubeCount.y - 1 ) * cubeSpacing.y * 0.5f, -( cubeCount.z - 1 ) * cubeSpacing.z * 0.5f );
     float matrix[ 16 ];
-    XMStoreFloat4x4( (XMFLOAT4X4*)matrix, worldViewProjectionMatrix );
-    Rasterizer::SetViewProjectionMatrix( matrix );
+    for ( int32_t z = 0; z < cubeCount.z; ++z )
+    {
+        for ( int32_t y = 0; y < cubeCount.y; ++y )
+        {
+            for ( int32_t x = 0; x < cubeCount.x; ++x )
+            {
+                const int32_t index = z * cubeCount.x * cubeCount.y + y * cubeCount.x + x;
+                Rasterizer::SetBaseColor( (float*)&baseColor[ index % 4 ] );
 
-    float baseColor[] = { 0.5f, 0.5f, 1.0f, 1.0f };
-    Rasterizer::SetBaseColor( baseColor );
+                XMFLOAT3 center( cubeCenterMin.x + cubeSpacing.x * x, cubeCenterMin.y + cubeSpacing.y * y, cubeCenterMin.z + cubeSpacing.z * z );
+                XMMATRIX translationMatrix = XMMatrixTranslation( center.x, center.y, center.z );
+                XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( XMMatrixMultiply( translationMatrix, rotationMatrix ), viewProjectionMatrix );
+                XMStoreFloat4x4( (XMFLOAT4X4*)matrix, worldViewProjectionMatrix );
+                Rasterizer::SetViewProjectionMatrix( matrix );
 
-    Rasterizer::Draw( 0, triangleCount );
+                Rasterizer::Draw( 0, triangleCount );
+            }
+        }
+    }
 }
 
 int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
@@ -270,9 +298,10 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     UpdateWindow( hWnd );
 
     Rasterizer::SImage renderTarget;
+    Rasterizer::SImage depthTarget;
     SVertexBuffer vertexBuffer;
     uint32_t triangleCount;
-    CreateRenderData( width, height, &renderTarget, &vertexBuffer, &triangleCount );
+    CreateRenderData( width, height, &renderTarget, &depthTarget, &vertexBuffer, &triangleCount );
 
     Rasterizer::SViewport viewport;
     viewport.m_Left = 0;
@@ -283,6 +312,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetPositionStreams( vertexBuffer.GetPosX(), vertexBuffer.GetPosY(), vertexBuffer.GetPosZ() );
     Rasterizer::SetTexcoordStreams( vertexBuffer.GetTexU(), vertexBuffer.GetTexV() );
     Rasterizer::SetRenderTarget( renderTarget );
+    Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
@@ -303,7 +333,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
             DispatchMessage( &msg );
         }
 
-        RenderImage( d2dBitmap.Get(), renderTarget, triangleCount, aspectRatio, roll, pitch, yall );
+        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, triangleCount, aspectRatio, roll, pitch, yall );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
@@ -321,7 +351,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
     }
 
-    DestroyRenderData( &renderTarget, &vertexBuffer );
+    DestroyRenderData( &renderTarget, &depthTarget, &vertexBuffer );
 
     DestroyWindow( hWnd );
 
