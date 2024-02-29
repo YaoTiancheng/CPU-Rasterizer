@@ -198,8 +198,8 @@ static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     depthTarget->m_Height = height;
     depthTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
 
-    texture->m_Width = 256;
-    texture->m_Height = 256;
+    texture->m_Width = 4;
+    texture->m_Height = 4;
     texture->m_Bits = (uint8_t*)_aligned_malloc( texture->m_Width * texture->m_Height * 4, 16 );
 
     // initialize the texture with a checkerboard pattern
@@ -208,8 +208,8 @@ static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     {
         for ( uint32_t texelX = 0; texelX < texture->m_Width; ++texelX )
         {
-            uint32_t blockX = texelX / 32;
-            uint32_t blockY = texelY / 32;
+            uint32_t blockX = texelX / 1;
+            uint32_t blockY = texelY / 1;
             bool isWhite = ( blockX + blockY ) % 2 == 0;
             *texelPtr = isWhite ? 0xFFFFFFFF : 0;
             ++texelPtr;

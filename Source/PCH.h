@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cassert>
+#include <cmath>
 #include <algorithm>
 
 #include <d2d1.h>

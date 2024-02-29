@@ -139,6 +139,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Source\ImageOps.inl" />
     <ClInclude Include="Source\MathHelper.h" />
     <ClInclude Include="Source\PCH.h" />
     <ClInclude Include="Source\Rasterization.h" />

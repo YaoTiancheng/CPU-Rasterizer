@@ -1,5 +1,6 @@
 #include "PCH.h"
 #include "Rasterization.h"
+#include "ImageOps.inl"
 #include "SIMDMath.h"
 #include "MathHelper.h"
 
@@ -184,20 +185,6 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
-static inline void SampleTexture_PointClamp( float texU, float texV, float* r, float* g, float* b, float* a )
-{
-    const int32_t maxX = s_Texture.m_Width - 1;
-    const int32_t maxY = s_Texture.m_Height - 1;
-    const int32_t texelPosX = std::max( std::min( int32_t( texU * maxX + 0.5f ), maxX ), 0 );
-    const int32_t texelPosY = std::max( std::min( int32_t( texV * maxY + 0.5f ), maxY ), 0 );
-    const uint32_t texel = ( (uint32_t*)s_Texture.m_Bits )[ texelPosY * s_Texture.m_Width + texelPosX ];
-    const float denorm = 1.f / 255.f;
-    *a = ( texel >> 24 & 0xFF ) * denorm;
-    *r = ( texel >> 16 & 0xFF ) * denorm;
-    *g = ( texel >> 8 & 0xFF ) * denorm;
-    *b = ( texel & 0xFF ) * denorm;
-}
-
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
     // Calculate bounding box of the triangle and crop with the viewport
@@ -294,7 +281,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     float texcoordV = texV * w;
 
                     float r, g, b, a;
-                    SampleTexture_PointClamp( texcoordU, texcoordV, &r, &g, &b, &a );
+                    SampleTexture_PointClamp( s_Texture, texcoordU, texcoordV, &r, &g, &b, &a );
                     r *= s_BaseColor[ 0 ];
                     g *= s_BaseColor[ 1 ];
                     b *= s_BaseColor[ 2 ];
