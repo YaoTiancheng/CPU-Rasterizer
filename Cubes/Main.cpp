@@ -122,7 +122,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     rect.bottom = height;
     AdjustWindowRect( &rect, windowStyle, FALSE );
 
-    HWND hWnd = CreateWindowW( s_WindowClassName, L"CPU-Rasterizer", windowStyle,
+    HWND hWnd = CreateWindowW( s_WindowClassName, L"Cubes", windowStyle,
         CW_USEDEFAULT, 0, rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, hInstance, nullptr );
 
     return hWnd;
@@ -365,6 +365,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
     Rasterizer::SetTexture( texture );
+    Rasterizer::SetPipelineStates( Rasterizer::TGetPipelineStates<true>::s_States );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 
