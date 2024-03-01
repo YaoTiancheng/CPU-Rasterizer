@@ -7,6 +7,8 @@
 // Windows Header Files
 #include <windows.h>
 #include <wrl/client.h>
+#include <wincodec.h>
+#include <wincodecsdk.h>
 
 // C RunTime Header Files
 #include <malloc.h>

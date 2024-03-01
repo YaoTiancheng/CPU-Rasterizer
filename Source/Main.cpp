@@ -128,7 +128,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
+static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
 {
     vertexBuffer->Allocate( 36 );
 
@@ -202,19 +202,46 @@ static void CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     texture->m_Height = 4;
     texture->m_Bits = (uint8_t*)_aligned_malloc( texture->m_Width * texture->m_Height * 4, 16 );
 
-    // initialize the texture with a checkerboard pattern
-    uint32_t* texelPtr = (uint32_t*)texture->m_Bits;
-    for ( uint32_t texelY = 0; texelY < texture->m_Height; ++texelY )
+    // Load the texture from file
+    ComPtr<IWICImagingFactory> WICImagingFactory;
+    HRESULT hr = CoCreateInstance( CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)WICImagingFactory.GetAddressOf() );
+    if ( FAILED( hr ) )
     {
-        for ( uint32_t texelX = 0; texelX < texture->m_Width; ++texelX )
-        {
-            uint32_t blockX = texelX / 1;
-            uint32_t blockY = texelY / 1;
-            bool isWhite = ( blockX + blockY ) % 2 == 0;
-            *texelPtr = isWhite ? 0xFFFFFFFF : 0;
-            ++texelPtr;
-        }
+        return false;
     }
+
+    ComPtr<IWICBitmapDecoder> decoder;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICFormatConverter> convertedFrame;
+
+    if ( FAILED( WICImagingFactory->CreateDecoderFromFilename( L"Resources/DirectX12Ultimate.png", NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
+    {
+        return false;
+    }
+
+    if ( FAILED( decoder->GetFrame( 0, frame.GetAddressOf() ) ) )
+    {
+        return false;
+    }
+
+    if ( FAILED( frame->GetSize( &texture->m_Width, &texture->m_Height ) ) )
+    {
+        return false;
+    }
+    
+    if ( FAILED( WICImagingFactory->CreateFormatConverter( convertedFrame.GetAddressOf() ) ) )
+    {
+        return false;
+    }
+
+    if ( FAILED( convertedFrame->Initialize( frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, NULL, 0.f, WICBitmapPaletteTypeCustom ) ) )
+    {
+        return false;
+    }
+
+    const uint32_t textureByteSize = texture->m_Width * texture->m_Height * 4;
+    texture->m_Bits = (uint8_t*)_aligned_malloc( textureByteSize, 16 );
+    return SUCCEEDED( convertedFrame->CopyPixels( nullptr, texture->m_Width * 4, textureByteSize, (BYTE*)texture->m_Bits ) );
 }
 
 static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer )
@@ -238,7 +265,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
         ++depthBit;
     }
 
-    XMFLOAT4 baseColor[] = { { 0.5f, 0.5f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
+    XMFLOAT4 baseColor[] = { { 1.f, 1.f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
 
     XMMATRIX viewMatrix = XMMatrixSet( 1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
@@ -248,7 +275,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
     XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
 
-    XMINT3 cubeCount( 3, 4, 3 );
+    XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
     XMFLOAT3 cubeCenterMin( -( cubeCount.x - 1 ) * cubeSpacing.x * 0.5f, -( cubeCount.y - 1 ) * cubeSpacing.y * 0.5f, -( cubeCount.z - 1 ) * cubeSpacing.z * 0.5f );
     float matrix[ 16 ];
