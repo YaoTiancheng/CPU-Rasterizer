@@ -1,7 +1,7 @@
 #include "PCH.h"
 #include "Rasterization.h"
 #include "ImageOps.inl"
-#include "SIMDMath.h"
+#include "SIMDMath.inl"
 #include "MathHelper.h"
 
 #define SIMD_WIDTH 4

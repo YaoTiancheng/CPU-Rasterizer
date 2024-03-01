@@ -348,7 +348,10 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SImage texture;
     SVertexBuffer vertexBuffer;
     uint32_t triangleCount;
-    CreateRenderData( width, height, &renderTarget, &depthTarget, &texture, &vertexBuffer, &triangleCount );
+    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &texture, &vertexBuffer, &triangleCount ) )
+    {
+        return 0;
+    }
 
     Rasterizer::SViewport viewport;
     viewport.m_Left = 0;
