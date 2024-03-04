@@ -10,6 +10,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cubes", "Cubes\Cubes.vcxpro
 		{56A956CB-4444-4CF0-8EBF-9602DAD80C6A} = {56A956CB-4444-4CF0-8EBF-9602DAD80C6A}
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloTriangle", "HelloTriangle\HelloTriangle.vcxproj", "{1117EBB0-2440-4CB5-A0D7-E17AC0EA0507}"
+	ProjectSection(ProjectDependencies) = postProject
+		{56A956CB-4444-4CF0-8EBF-9602DAD80C6A} = {56A956CB-4444-4CF0-8EBF-9602DAD80C6A}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -24,6 +29,10 @@ Global
 		{63ADF8F2-4327-4743-8E97-3D6BE0FC94D7}.Debug|x64.Build.0 = Debug|x64
 		{63ADF8F2-4327-4743-8E97-3D6BE0FC94D7}.Release|x64.ActiveCfg = Release|x64
 		{63ADF8F2-4327-4743-8E97-3D6BE0FC94D7}.Release|x64.Build.0 = Release|x64
+		{1117EBB0-2440-4CB5-A0D7-E17AC0EA0507}.Debug|x64.ActiveCfg = Debug|x64
+		{1117EBB0-2440-4CB5-A0D7-E17AC0EA0507}.Debug|x64.Build.0 = Debug|x64
+		{1117EBB0-2440-4CB5-A0D7-E17AC0EA0507}.Release|x64.ActiveCfg = Release|x64
+		{1117EBB0-2440-4CB5-A0D7-E17AC0EA0507}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -25,27 +25,31 @@ namespace Rasterizer
         const void* s_RasterizerState;
     };
 
-    template <bool UseTexture>
+    template <bool UseTexture, bool UseVertexColor>
     struct TGetPipelineStates
     {
         static const SPipelineStates s_States;
     };
 
-    #define RASTERIZER_SPECIALIZE_GETPIPELINESTATES( useTexture ) \
+    #define RASTERIZER_SPECIALIZE_GETPIPELINESTATES( useTexture, useVertexColor ) \
         template <> \
-        struct TGetPipelineStates<useTexture> \
+        struct TGetPipelineStates<useTexture, useVertexColor> \
         { \
             static const SPipelineStates s_States; \
         };
 
-    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( false )
-    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( true )
+    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( false, false )
+    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( true, false )
+    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( false, true )
+    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( true, true )
 
     #undef RASTERIZER_SPECIALIZE_GETPIPELINESTATES
 
     void SetPositionStreams( const float* x, const float* y, const float* z );
 
     void SetTexcoordStreams( const float* texU, const float* texV );
+
+    void SetColorStreams( const float* r, const float* g, const float* b );
 
     void SetViewProjectionMatrix( const float* matrix );
 

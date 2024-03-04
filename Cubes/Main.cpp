@@ -198,10 +198,6 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     depthTarget->m_Height = height;
     depthTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
 
-    texture->m_Width = 4;
-    texture->m_Height = 4;
-    texture->m_Bits = (uint8_t*)_aligned_malloc( texture->m_Width * texture->m_Height * 4, 16 );
-
     // Load the texture from file
     ComPtr<IWICImagingFactory> WICImagingFactory;
     HRESULT hr = CoCreateInstance( CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)WICImagingFactory.GetAddressOf() );
@@ -365,7 +361,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
     Rasterizer::SetTexture( texture );
-    Rasterizer::SetPipelineStates( Rasterizer::TGetPipelineStates<true>::s_States );
+    Rasterizer::SetPipelineStates( Rasterizer::TGetPipelineStates<true, false>::s_States );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 
