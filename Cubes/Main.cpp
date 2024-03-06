@@ -128,9 +128,9 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer, uint32_t* triangleCount )
+static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer, uint32_t*& indices, uint32_t* triangleCount )
 {
-    vertexBuffer->Allocate( 36 );
+    vertexBuffer->Allocate( 24 );
 
     SVertexBuffer::SIterator vertexIter = vertexBuffer->GetBeginIterator();
 
@@ -138,55 +138,51 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     vertexIter.SetVertex( 1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, -1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    // Front 
-    vertexIter.SetVertex( 1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
 
     // Left 
     vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, -1.f, 1.f, 0.f, 1.f ).MoveToNext();
-    // Left 
-    vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, 1.f, -1.f, 1.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
 
     // Right 
     vertexIter.SetVertex( 1.f, -1.f, 1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, -1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    // Right 
-    vertexIter.SetVertex( 1.f, -1.f, 1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, 1.f, 1.f, 1.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
 
     // Back 
     vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 1.f ).MoveToNext();
-    // Back 
-    vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, 1.f, 1.f, 1.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
 
     // Top 
     vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    // Top 
-    vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, 1.f, 1.f, 1.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
 
     // Bottom 
     vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 0.f ).MoveToNext();
     vertexIter.SetVertex( 1.f, -1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    // Bottom
-    vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
     vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 0.f ).MoveToNext();
+
+    indices = (uint32_t*)_aligned_malloc( 36 * 4, 16 );
+    indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
+    indices[ 3 ] = 1; indices[ 4 ] = 0; indices[ 5 ] = 3;
+    indices[ 6 ] = 4; indices[ 7 ] = 5; indices[ 8 ] = 6;
+    indices[ 9 ] = 5; indices[ 10 ] = 4; indices[ 11 ] = 7;
+    indices[ 12 ] = 8; indices[ 13 ] = 9; indices[ 14 ] = 10;
+    indices[ 15 ] = 9; indices[ 16 ] = 8; indices[ 17 ] = 11;
+    indices[ 18 ] = 12; indices[ 19 ] = 13; indices[ 20 ] = 14;
+    indices[ 21 ] = 13; indices[ 22 ] = 12; indices[ 23 ] = 15;
+    indices[ 24 ] = 16; indices[ 25 ] = 17; indices[ 26 ] = 18;
+    indices[ 27 ] = 17; indices[ 28 ] = 16; indices[ 29 ] = 19;
+    indices[ 30 ] = 20; indices[ 31 ] = 21; indices[ 32 ] = 22;
+    indices[ 33 ] = 21; indices[ 34 ] = 20; indices[ 35 ] = 23;
 
     *triangleCount = 12;
 
@@ -240,9 +236,10 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     return SUCCEEDED( convertedFrame->CopyPixels( nullptr, texture->m_Width * 4, textureByteSize, (BYTE*)texture->m_Bits ) );
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, SVertexBuffer* vertexBuffer, uint32_t* indices )
 {
     vertexBuffer->Free();
+    _aligned_free( indices );
     _aligned_free( renderTarget->m_Bits );
     _aligned_free( depthTarget->m_Bits );
     _aligned_free( texture->m_Bits );
@@ -290,7 +287,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
                 XMStoreFloat4x4( (XMFLOAT4X4*)matrix, worldViewProjectionMatrix );
                 Rasterizer::SetViewProjectionMatrix( matrix );
 
-                Rasterizer::Draw( 0, triangleCount );
+                Rasterizer::DrawIndexed( 0, 0, triangleCount );
             }
         }
     }
@@ -343,8 +340,9 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SImage depthTarget;
     Rasterizer::SImage texture;
     SVertexBuffer vertexBuffer;
+    uint32_t* indices;
     uint32_t triangleCount;
-    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &texture, &vertexBuffer, &triangleCount ) )
+    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &texture, &vertexBuffer, indices, &triangleCount ) )
     {
         return 0;
     }
@@ -357,6 +355,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
     Rasterizer::SetPositionStreams( vertexBuffer.GetPosX(), vertexBuffer.GetPosY(), vertexBuffer.GetPosZ() );
     Rasterizer::SetTexcoordStreams( vertexBuffer.GetTexU(), vertexBuffer.GetTexV() );
+    Rasterizer::SetIndexStream( indices );
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
@@ -399,7 +398,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
     }
 
-    DestroyRenderData( &renderTarget, &depthTarget, &texture, &vertexBuffer );
+    DestroyRenderData( &renderTarget, &depthTarget, &texture, &vertexBuffer, indices );
 
     DestroyWindow( hWnd );
 

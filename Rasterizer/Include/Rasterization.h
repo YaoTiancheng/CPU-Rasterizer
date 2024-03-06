@@ -23,6 +23,7 @@ namespace Rasterizer
     {
         const void* s_RasterizerVertexState;
         const void* s_RasterizerState;
+        const void* s_RasterizerState1;
     };
 
     template <bool UseTexture, bool UseVertexColor>
@@ -51,6 +52,8 @@ namespace Rasterizer
 
     void SetColorStreams( const float* r, const float* g, const float* b );
 
+    void SetIndexStream( const uint32_t* indices );
+
     void SetViewProjectionMatrix( const float* matrix );
 
     void SetViewport( const SViewport& viewport );
@@ -66,4 +69,6 @@ namespace Rasterizer
     void SetPipelineStates( const SPipelineStates& states );
 
     void Draw( uint32_t baseVertexIndex, uint32_t trianglesCount );
+
+    void DrawIndexed( uint32_t baseVertexLocation, uint32_t baseIndexLocation, uint32_t trianglesCount );
 }
