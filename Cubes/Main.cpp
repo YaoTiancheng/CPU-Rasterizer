@@ -206,7 +206,7 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     ComPtr<IWICBitmapFrameDecode> frame;
     ComPtr<IWICFormatConverter> convertedFrame;
 
-    if ( FAILED( WICImagingFactory->CreateDecoderFromFilename( L"Resources/DirectX12Ultimate.png", NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
+    if ( FAILED( WICImagingFactory->CreateDecoderFromFilename( L"Resources/BRICK_1A.PNG", NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
     {
         return false;
     }
