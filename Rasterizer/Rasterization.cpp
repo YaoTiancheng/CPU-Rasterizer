@@ -61,10 +61,10 @@ struct SVertexStreams4
         return { m_X + num, m_Y + num, m_Z + num, m_W + num };
     }
 
-    float* m_X;
-    float* m_Y;
-    float* m_Z;
-    float* m_W;
+    float* m_X = nullptr;
+    float* m_Y = nullptr;
+    float* m_Z = nullptr;
+    float* m_W = nullptr;
 };
 
 struct SVertexStreams3
@@ -96,9 +96,9 @@ struct SVertexStreams3
         return { m_X + num, m_Y + num, m_Z + num };
     }
 
-    float* m_X;
-    float* m_Y;
-    float* m_Z;
+    float* m_X = nullptr;
+    float* m_Y = nullptr;
+    float* m_Z = nullptr;
 };
 
 struct SVertexStreams2
@@ -127,8 +127,8 @@ struct SVertexStreams2
         return { m_X + num, m_Y + num };
     }
 
-    float* m_X;
-    float* m_Y;
+    float* m_X = nullptr;
+    float* m_Y = nullptr;
 };
 
 typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams2, SVertexStreams3, SVertexStreams3, uint32_t );
@@ -760,8 +760,14 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
 
     SVertexStreams2 texStream;
     SVertexStreams3 colorStream;
-    texStream.Allocate( streamSize );
-    colorStream.Allocate( streamSize );
+    if ( s_PipelineState.m_UseTexture )
+    { 
+        texStream.Allocate( streamSize );
+    }
+    if ( s_PipelineState.m_UseVertexColor )
+    { 
+        colorStream.Allocate( streamSize );
+    }
 
     const SVertexStreams2 sourceTexStream = { const_cast<float*>( s_StreamSourceTexU ), const_cast<float*>( s_StreamSourceTexV ) };
     const SVertexStreams3 sourceColorStream = { const_cast<float*>( s_StreamSourceColorR ), const_cast<float*>( s_StreamSourceColorG ), const_cast<float*>( s_StreamSourceColorB ) };
@@ -780,8 +786,14 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     }
 
     posStream.Free();
-    texStream.Free();
-    colorStream.Free();
+    if ( s_PipelineState.m_UseTexture )
+    {
+        texStream.Free();
+    }
+    if ( s_PipelineState.m_UseVertexColor )
+    { 
+        colorStream.Free();
+    }
 }
 
 void Rasterizer::Draw( uint32_t baseVertexIndex, uint32_t trianglesCount )
