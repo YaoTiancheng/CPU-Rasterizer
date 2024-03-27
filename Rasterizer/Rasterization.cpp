@@ -5,6 +5,9 @@
 #include "MathHelper.h"
 
 #define SIMD_WIDTH 4
+#define MAX_PIPELINE_STATE_COUNT 4
+
+using namespace Rasterizer;
 
 static const int32_t s_SubpixelStep = 16; // 4 bits sub-pixel precision
 
@@ -131,11 +134,17 @@ struct SVertexStreams2
 typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams2, SVertexStreams3, SVertexStreams3, uint32_t );
 typedef void (*RasterizeFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams3, const uint32_t*, uint32_t );
 
-using namespace Rasterizer;
+struct SPipelineFunctionPointers
+{
+    TransformVerticesToRasterizerCoordinatesFunctionPtr m_TransformVerticesToRasterizerCoordinatesFunction;
+    RasterizeFunctionPtr m_RasterizerFunction;
+    RasterizeFunctionPtr m_RasterizerFunctionIndexed;
+};
 
-static TransformVerticesToRasterizerCoordinatesFunctionPtr s_TransformVerticesToRasterizerCoordinatesFunction = nullptr;
-static RasterizeFunctionPtr s_RasterizerFunction = nullptr;
-static RasterizeFunctionPtr s_RasterizerFunctionIndexed = nullptr;
+static SPipelineFunctionPointers s_PipelineFunctionPtrsTable[ MAX_PIPELINE_STATE_COUNT ] = { 0 };
+
+static SPipelineState s_PipelineState;
+static SPipelineFunctionPointers s_PipelineFunctionPtrs;
 
 static float s_ViewProjectionMatrix[ 16 ] =
     { 
@@ -618,26 +627,36 @@ static void RasterizeTriangles( SVertexStreams4 pos, SVertexStreams2 texcoord, S
     }
 }
 
-#define INSTANTIATE_PIPELINESTATE_FUNCTIONS( useTexture, useVertexColor ) \
-    template void TransformVerticesToRasterizerCoordinates<useTexture, useVertexColor>( SVertexStreams4, SVertexStreams2, SVertexStreams2, SVertexStreams3, SVertexStreams3, uint32_t ); \
-    template void RasterizeTriangles<useTexture, useVertexColor, false>( SVertexStreams4, SVertexStreams2, SVertexStreams3, const uint32_t*, uint32_t ); \
-    template void RasterizeTriangles<useTexture, useVertexColor, true>( SVertexStreams4, SVertexStreams2, SVertexStreams3, const uint32_t*, uint32_t ); \
 
-    INSTANTIATE_PIPELINESTATE_FUNCTIONS( false, false )
-    INSTANTIATE_PIPELINESTATE_FUNCTIONS( true, false )
-    INSTANTIATE_PIPELINESTATE_FUNCTIONS( false, true )
-    INSTANTIATE_PIPELINESTATE_FUNCTIONS( true, true )
-#undef INSTANTIATE_PIPELINESTATE_FUNCTIONS
+static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor )
+{
+    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x10 : 0 );
+}
 
-#define IMPLEMENT_PIPELINESTATES( useTexture, useVertexColor ) \
-    const SPipelineStates TGetPipelineStates<useTexture, useVertexColor>::s_States = { (void*)&TransformVerticesToRasterizerCoordinates<useTexture, useVertexColor>, (void*)&RasterizeTriangles<useTexture, useVertexColor, false>, (void*)&RasterizeTriangles<useTexture, useVertexColor, true> };
+static uint32_t MakePipelineStateIndex( const SPipelineState& state )
+{
+    return MakePipelineStateIndex( state.m_UseTexture, state.m_UseVertexColor );
+}
 
-    IMPLEMENT_PIPELINESTATES( false, false )
-    IMPLEMENT_PIPELINESTATES( true, false )
-    IMPLEMENT_PIPELINESTATES( false, true )
-    IMPLEMENT_PIPELINESTATES( true, true )
-#undef IMPLEMENT_PIPELINESTATES
+template <bool UseTexture, bool UseVertexColor>
+SPipelineFunctionPointers GetPipelineFunctionPointers()
+{
+    SPipelineFunctionPointers ptrs;
+    ptrs.m_TransformVerticesToRasterizerCoordinatesFunction = TransformVerticesToRasterizerCoordinates<UseTexture, UseVertexColor>;
+    ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, false>;
+    ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, true>;
+    return ptrs;
+}
 
+void Rasterizer::Initialize()
+{
+#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor ) s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( useTexture, useVertexColor ) ] = GetPipelineFunctionPointers< useTexture, useVertexColor >();
+    SET_PIPELINE_FUNCTION_POINTERS( false, false )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true )
+#undef SET_PIPELINE_FUNCTION_POINTERS
+}
 
 void Rasterizer::SetPositionStreams( const float* x, const float* y, const float* z )
 {
@@ -699,11 +718,10 @@ void Rasterizer::SetTexture( const SImage& image )
     s_Texture = image;
 }
 
-void Rasterizer::SetPipelineStates( const SPipelineStates& states )
+void Rasterizer::SetPipelineState( const SPipelineState& state )
 {
-    s_TransformVerticesToRasterizerCoordinatesFunction = (TransformVerticesToRasterizerCoordinatesFunctionPtr)states.s_RasterizerVertexState;
-    s_RasterizerFunction = (RasterizeFunctionPtr)states.s_RasterizerState;
-    s_RasterizerFunctionIndexed = (RasterizeFunctionPtr)states.s_RasterizerState1;
+    s_PipelineState = state;
+    s_PipelineFunctionPtrs = s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( state ) ];
 }
 
 static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocation, uint32_t trianglesCount, bool useIndex )
@@ -747,18 +765,18 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
 
     const SVertexStreams2 sourceTexStream = { const_cast<float*>( s_StreamSourceTexU ), const_cast<float*>( s_StreamSourceTexV ) };
     const SVertexStreams3 sourceColorStream = { const_cast<float*>( s_StreamSourceColorR ), const_cast<float*>( s_StreamSourceColorG ), const_cast<float*>( s_StreamSourceColorB ) };
-    s_TransformVerticesToRasterizerCoordinatesFunction( posStream,
+    s_PipelineFunctionPtrs.m_TransformVerticesToRasterizerCoordinatesFunction( posStream,
         sourceTexStream + baseVertexLocation, texStream,
         sourceColorStream + baseVertexLocation, colorStream,
         roundedUpVerticesCount );
 
     if ( useIndex )
     { 
-        s_RasterizerFunctionIndexed( posStream, texStream, colorStream, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
+        s_PipelineFunctionPtrs.m_RasterizerFunctionIndexed( posStream, texStream, colorStream, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
     }
     else
     {
-        s_RasterizerFunction( posStream, texStream, colorStream, nullptr, trianglesCount );
+        s_PipelineFunctionPtrs.m_RasterizerFunction( posStream, texStream, colorStream, nullptr, trianglesCount );
     }
 
     posStream.Free();

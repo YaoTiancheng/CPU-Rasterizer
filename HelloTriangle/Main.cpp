@@ -154,12 +154,14 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     viewport.m_Width = width;
     viewport.m_Height = height;
 
+    Rasterizer::Initialize();
     Rasterizer::SetPositionStreams( vertexBuffer, vertexBuffer + 4, vertexBuffer + 8 );
     Rasterizer::SetColorStreams( vertexBuffer + 12, vertexBuffer + 16, vertexBuffer + 20 );
     Rasterizer::SetRenderTarget( s_RenderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
-    Rasterizer::SetPipelineStates( Rasterizer::TGetPipelineStates<false, true>::s_States );
+    Rasterizer::SPipelineState pipelineState( false, true );
+    Rasterizer::SetPipelineState( pipelineState );
 
     ZeroMemory( s_RenderTarget.m_Bits, s_RenderTarget.m_Width * s_RenderTarget.m_Height * 4 );
     float* depthBit = (float*)depthTarget.m_Bits;

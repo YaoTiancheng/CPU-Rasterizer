@@ -353,6 +353,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     viewport.m_Width = width;
     viewport.m_Height = height;
 
+    Rasterizer::Initialize();
     Rasterizer::SetPositionStreams( vertexBuffer.GetPosX(), vertexBuffer.GetPosY(), vertexBuffer.GetPosZ() );
     Rasterizer::SetTexcoordStreams( vertexBuffer.GetTexU(), vertexBuffer.GetTexV() );
     Rasterizer::SetIndexStream( indices );
@@ -360,7 +361,8 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
     Rasterizer::SetTexture( texture );
-    Rasterizer::SetPipelineStates( Rasterizer::TGetPipelineStates<true, false>::s_States );
+    Rasterizer::SPipelineState pipelineState( true, false );
+    Rasterizer::SetPipelineState( pipelineState );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 

@@ -1,7 +1,5 @@
 #pragma once
 
-struct SPipelineState;
-
 namespace Rasterizer
 {
     struct SViewport
@@ -19,32 +17,24 @@ namespace Rasterizer
         uint32_t m_Height;
     };
 
-    struct SPipelineStates
+    struct SPipelineState
     {
-        const void* s_RasterizerVertexState;
-        const void* s_RasterizerState;
-        const void* s_RasterizerState1;
+        SPipelineState()
+            : m_UseTexture( false )
+            , m_UseVertexColor( false )
+        {}
+        
+        SPipelineState( bool useTexture, bool useVertexColor )
+            : m_UseTexture( useTexture )
+            , m_UseVertexColor( useVertexColor )
+        {
+        }
+
+        bool m_UseTexture;
+        bool m_UseVertexColor;
     };
 
-    template <bool UseTexture, bool UseVertexColor>
-    struct TGetPipelineStates
-    {
-        static const SPipelineStates s_States;
-    };
-
-    #define RASTERIZER_SPECIALIZE_GETPIPELINESTATES( useTexture, useVertexColor ) \
-        template <> \
-        struct TGetPipelineStates<useTexture, useVertexColor> \
-        { \
-            static const SPipelineStates s_States; \
-        };
-
-    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( false, false )
-    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( true, false )
-    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( false, true )
-    RASTERIZER_SPECIALIZE_GETPIPELINESTATES( true, true )
-
-    #undef RASTERIZER_SPECIALIZE_GETPIPELINESTATES
+    void Initialize();
 
     void SetPositionStreams( const float* x, const float* y, const float* z );
 
@@ -66,7 +56,7 @@ namespace Rasterizer
 
     void SetTexture( const SImage& image );
 
-    void SetPipelineStates( const SPipelineStates& states );
+    void SetPipelineState( const SPipelineState& state );
 
     void Draw( uint32_t baseVertexIndex, uint32_t trianglesCount );
 
