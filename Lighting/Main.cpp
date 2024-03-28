@@ -12,13 +12,16 @@ struct SVertexBuffer
 {
     struct SIterator
     {
-        SIterator& SetVertex( float posX, float posY, float posZ, float texU, float texV )
+        SIterator& SetVertex( float posX, float posY, float posZ, float texU, float texV, float normalX, float normalY, float normalZ )
         {
             *m_PosX = posX;
             *m_PosY = posY;
             *m_PosZ = posZ;
             *m_TexU = texU;
             *m_TexV = texV;
+            *m_NormalX = normalX;
+            *m_NormalY = normalY;
+            *m_NormalZ = normalZ;
             return *this;
         }
 
@@ -29,6 +32,9 @@ struct SVertexBuffer
             ++m_PosZ;
             ++m_TexU;
             ++m_TexV;
+            ++m_NormalX;
+            ++m_NormalY;
+            ++m_NormalZ;
         }
 
         float* m_PosX;
@@ -36,6 +42,9 @@ struct SVertexBuffer
         float* m_PosZ;
         float* m_TexU;
         float* m_TexV;
+        float* m_NormalX;
+        float* m_NormalY;
+        float* m_NormalZ;
     };
 
     SVertexBuffer()
@@ -49,7 +58,7 @@ struct SVertexBuffer
     {
         assert( m_Data == nullptr && m_VerticesCount == 0 && m_RoundedVerticesCount == 0 );
         m_RoundedVerticesCount = MathHelper::DivideAndRoundUp( verticesCount, 4u ) * 4;
-        const uint64_t bufferSize = m_RoundedVerticesCount * sizeof( float ) * 5;
+        const uint64_t bufferSize = m_RoundedVerticesCount * sizeof( float ) * 8;
         m_Data = (uint8_t*)_aligned_malloc( bufferSize, 16 );
         m_VerticesCount = verticesCount;
     }
@@ -62,7 +71,7 @@ struct SVertexBuffer
         m_Data = nullptr;
     }
 
-    SIterator GetBeginIterator() { return SIterator{ GetPosX(), GetPosY(), GetPosZ(), GetTexU(), GetTexV() }; }
+    SIterator GetBeginIterator() { return SIterator{ GetPosX(), GetPosY(), GetPosZ(), GetTexU(), GetTexV(), GetNormalX(), GetNormalY(), GetNormalZ() }; }
 
     uint32_t GetVerticesCount() const { return m_VerticesCount; }
 
@@ -71,6 +80,9 @@ struct SVertexBuffer
     float* GetPosZ() const { return (float*)m_Data + m_RoundedVerticesCount * 2; }
     float* GetTexU() const { return (float*)m_Data + m_RoundedVerticesCount * 3; }
     float* GetTexV() const { return (float*)m_Data + m_RoundedVerticesCount * 4; }
+    float* GetNormalX() const { return (float*)m_Data + m_RoundedVerticesCount * 5; }
+    float* GetNormalY() const { return (float*)m_Data + m_RoundedVerticesCount * 6; }
+    float* GetNormalZ() const { return (float*)m_Data + m_RoundedVerticesCount * 7; }
 
     uint32_t m_VerticesCount;
     uint64_t m_RoundedVerticesCount;
@@ -122,7 +134,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     rect.bottom = height;
     AdjustWindowRect( &rect, windowStyle, FALSE );
 
-    HWND hWnd = CreateWindowW( s_WindowClassName, L"Cubes", windowStyle,
+    HWND hWnd = CreateWindowW( s_WindowClassName, L"Lighting", windowStyle,
         CW_USEDEFAULT, 0, rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, hInstance, nullptr );
 
     return hWnd;
@@ -135,40 +147,40 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     SVertexBuffer::SIterator vertexIter = vertexBuffer->GetBeginIterator();
 
     // Front 
-    vertexIter.SetVertex( 1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, -1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, -1.f, -1.f, 1.f, 1.f, 0.f, 0.f, -1.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 0.f, 0.f, 0.f, -1.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, -1.f, -1.f, 0.f, 1.f, 0.f, 0.f, -1.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 0.f, 0.f, 0.f, -1.f ).MoveToNext();
 
     // Left 
-    vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, -1.f, 1.f, 0.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, -1.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f, -1.f, 0.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, -1.f, 1.f, 0.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, 1.f, -1.f, 1.f, 0.f, -1.f, 0.f, 0.f ).MoveToNext();
 
     // Right 
-    vertexIter.SetVertex( 1.f, -1.f, 1.f, 1.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, -1.f, 0.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, -1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, 1.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, -1.f, 1.f, 1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, 1.f, -1.f, 0.f, 0.f, 1.f, 0.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, -1.f, -1.f, 0.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, 1.f, 1.f, 1.f, 0.f, 1.f, 0.f, 0.f ).MoveToNext();
 
     // Back 
-    vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, 1.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 1.f, 0.f, 0.f, 1.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, 1.f, 1.f, 0.f, 0.f, 0.f, 0.f, 1.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 1.f, 0.f, 0.f, 1.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, 1.f, 1.f, 1.f, 0.f, 0.f, 0.f, 1.f ).MoveToNext();
 
     // Top 
-    vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, 1.f, 1.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, 1.f, -1.f, 1.f, 1.f, 0.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, 1.f, 1.f, 0.f, 0.f, 0.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, 1.f, -1.f, 0.f, 1.f, 0.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, 1.f, 1.f, 1.f, 0.f, 0.f, 1.f, 0.f ).MoveToNext();
 
     // Bottom 
-    vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 0.f ).MoveToNext();
-    vertexIter.SetVertex( 1.f, -1.f, -1.f, 0.f, 1.f ).MoveToNext();
-    vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, -1.f, -1.f, 1.f, 1.f, 0.f, -1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, -1.f, 1.f, 0.f, 0.f, 0.f, -1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( 1.f, -1.f, -1.f, 0.f, 1.f, 0.f, -1.f, 0.f ).MoveToNext();
+    vertexIter.SetVertex( -1.f, -1.f, 1.f, 1.f, 0.f, 0.f, -1.f, 0.f ).MoveToNext();
 
     indices = (uint32_t*)_aligned_malloc( 36 * 4, 16 );
     indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
@@ -249,6 +261,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 {
     yall += XMConvertToRadians( 0.5f );
     roll += XMConvertToRadians( 0.3f );
+    pitch += XMConvertToRadians( 0.1f );
 
     ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
     float* depthBit = (float*)depthTarget.m_Bits;
@@ -267,6 +280,10 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 2.f, 1000.f );
     XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
     XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
+
+    XMFLOAT3X3 normalMatrix;
+    XMStoreFloat3x3( &normalMatrix, rotationMatrix );
+    Rasterizer::SetNormalMatrix( (float*)&normalMatrix );
 
     XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
@@ -356,13 +373,19 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::Initialize();
     Rasterizer::SetPositionStreams( vertexBuffer.GetPosX(), vertexBuffer.GetPosY(), vertexBuffer.GetPosZ() );
     Rasterizer::SetTexcoordStreams( vertexBuffer.GetTexU(), vertexBuffer.GetTexV() );
+    Rasterizer::SetNormalStreams( vertexBuffer.GetNormalX(), vertexBuffer.GetNormalY(), vertexBuffer.GetNormalZ() );
     Rasterizer::SetIndexStream( indices );
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
     Rasterizer::SetTexture( texture );
-    Rasterizer::SPipelineState pipelineState( true, false, Rasterizer::ELightType::eInvalid );
+    Rasterizer::SPipelineState pipelineState( true, false, Rasterizer::ELightType::eDirectional );
     Rasterizer::SetPipelineState( pipelineState );
+
+    XMFLOAT4 lightColor( 1.f, 1.f, 1.f, 1.f );
+    XMFLOAT4 lightDirection( 0.f, 1.f, 0.f, 0.f );
+    Rasterizer::SetLightColor( (float*)&lightColor );
+    Rasterizer::SetLightPosition( (float*)&lightDirection );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 

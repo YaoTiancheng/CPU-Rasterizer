@@ -4,6 +4,11 @@
 
 namespace SIMDMath
 { 
+    inline void __vectorcall Vec3DotVec3( __m128 ax, __m128 ay, __m128 az, __m128 bx, __m128 by, __m128 bz, __m128& out )
+    {
+        out = _mm_fmadd_ps( ax, bx, _mm_fmadd_ps( ay, by, _mm_mul_ps( az, bz ) ) );
+    }
+
     inline void __vectorcall Vec3DotVec4( __m128 ax, __m128 ay, __m128 az, __m128 bx, __m128 by, __m128 bz, __m128 bw, __m128& out )
     {
         out = _mm_fmadd_ps( ax, bx, _mm_fmadd_ps( ay, by, _mm_fmadd_ps( az, bz, bw ) ) );

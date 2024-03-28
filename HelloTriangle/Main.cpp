@@ -160,7 +160,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetRenderTarget( s_RenderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
-    Rasterizer::SPipelineState pipelineState( false, true );
+    Rasterizer::SPipelineState pipelineState( false, true, Rasterizer::ELightType::eInvalid );
     Rasterizer::SetPipelineState( pipelineState );
 
     ZeroMemory( s_RenderTarget.m_Bits, s_RenderTarget.m_Width * s_RenderTarget.m_Height * 4 );

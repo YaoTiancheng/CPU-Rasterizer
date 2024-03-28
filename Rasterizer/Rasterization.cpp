@@ -3,9 +3,10 @@
 #include "ImageOps.inl"
 #include "SIMDMath.inl"
 #include "MathHelper.h"
+#include "VertexStreams.h"
 
 #define SIMD_WIDTH 4
-#define MAX_PIPELINE_STATE_COUNT 4
+#define MAX_PIPELINE_STATE_COUNT 8
 
 using namespace Rasterizer;
 
@@ -17,6 +18,7 @@ struct SRasterizerVertex
     void SetRcpW( float rcpw ) { m_Rcpw = rcpw; }
     void SetTexcoords( float u, float v ) { m_TexcoordU = u; m_TexcoordV = v; }
     void SetColor( float r, float g, float b ) { m_ColorR = r; m_ColorG = g; m_ColorB = b; }
+    void SetNormal( float x, float y, float z ) { m_NormalX = x; m_NormalY = y; m_NormalZ = z; }
 
     int32_t m_X;
     int32_t m_Y;
@@ -27,112 +29,13 @@ struct SRasterizerVertex
     float m_ColorR;
     float m_ColorG;
     float m_ColorB;
+    float m_NormalX;
+    float m_NormalY;
+    float m_NormalZ;
 };
 
-struct SVertexStreams4
-{
-    void Allocate( uint64_t streamSize )
-    {
-        m_X = (float*)_aligned_malloc( streamSize, 16 );
-        m_Y = (float*)_aligned_malloc( streamSize, 16 );
-        m_Z = (float*)_aligned_malloc( streamSize, 16 );
-        m_W = (float*)_aligned_malloc( streamSize, 16 );
-    }
-
-    void Free()
-    {
-        _aligned_free( m_X );
-        _aligned_free( m_Y );
-        _aligned_free( m_Z );
-        _aligned_free( m_W );
-    }
-
-    SVertexStreams4& operator+=( uint32_t num )
-    {
-        m_X += num;
-        m_Y += num;
-        m_Z += num;
-        m_W += num;
-        return *this;
-    }
-
-    SVertexStreams4 operator+( uint32_t num ) const
-    {
-        return { m_X + num, m_Y + num, m_Z + num, m_W + num };
-    }
-
-    float* m_X = nullptr;
-    float* m_Y = nullptr;
-    float* m_Z = nullptr;
-    float* m_W = nullptr;
-};
-
-struct SVertexStreams3
-{
-    void Allocate( uint64_t streamSize )
-    {
-        m_X = (float*)_aligned_malloc( streamSize, 16 );
-        m_Y = (float*)_aligned_malloc( streamSize, 16 );
-        m_Z = (float*)_aligned_malloc( streamSize, 16 );
-    }
-
-    void Free()
-    {
-        _aligned_free( m_X );
-        _aligned_free( m_Y );
-        _aligned_free( m_Z );
-    }
-
-    SVertexStreams3& operator+=( uint32_t num )
-    {
-        m_X += num;
-        m_Y += num;
-        m_Z += num;
-        return *this;
-    }
-
-    SVertexStreams3 operator+( uint32_t num ) const
-    {
-        return { m_X + num, m_Y + num, m_Z + num };
-    }
-
-    float* m_X = nullptr;
-    float* m_Y = nullptr;
-    float* m_Z = nullptr;
-};
-
-struct SVertexStreams2
-{
-    void Allocate( uint64_t streamSize )
-    {
-        m_X = (float*)_aligned_malloc( streamSize, 16 );
-        m_Y = (float*)_aligned_malloc( streamSize, 16 );
-    }
-
-    void Free()
-    {
-        _aligned_free( m_X );
-        _aligned_free( m_Y );
-    }
-
-    SVertexStreams2& operator+=( uint32_t num )
-    {
-        m_X += num;
-        m_Y += num;
-        return *this;
-    }
-
-    SVertexStreams2 operator+( uint32_t num ) const
-    {
-        return { m_X + num, m_Y + num };
-    }
-
-    float* m_X = nullptr;
-    float* m_Y = nullptr;
-};
-
-typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams2, SVertexStreams3, SVertexStreams3, uint32_t );
-typedef void (*RasterizeFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams3, const uint32_t*, uint32_t );
+typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams2, SVertexStreams3, SVertexStreams3, SVertexStreams3, uint32_t );
+typedef void (*RasterizeFunctionPtr)( SVertexStreams4, SVertexStreams2, SVertexStreams3, SVertexStreams3, const uint32_t*, uint32_t );
 
 struct SPipelineFunctionPointers
 {
@@ -153,7 +56,15 @@ static float s_ViewProjectionMatrix[ 16 ] =
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 0.f, 1.f 
     };
+static float s_NormalMatrix[ 9 ] =
+    {
+        1.f, 0.f, 0.f,
+        0.f, 1.f, 0.f,
+        0.f, 0.f, 1.f,
+    };
 static float s_BaseColor[ 4 ] = { 1.f, 1.f, 1.f, 1.f };
+static float s_LightPosition[ 4 ] = { 0.f, 0.f, 0.f, 0.f };
+static float s_LightColor[ 4 ] = { 1.f, 1.f, 1.f, 1.f };
 
 static SViewport s_Viewport = { 0 };
 static int32_t s_RasterCoordStartX = 0;
@@ -169,13 +80,16 @@ static const float* s_StreamSourceTexV = nullptr;
 static const float* s_StreamSourceColorR = nullptr;
 static const float* s_StreamSourceColorG = nullptr;
 static const float* s_StreamSourceColorB = nullptr;
+static const float* s_StreamSourceNormalX = nullptr;
+static const float* s_StreamSourceNormalY = nullptr;
+static const float* s_StreamSourceNormalZ = nullptr;
 static const uint32_t* s_StreamSourceIndex = nullptr;
 
 static SImage s_RenderTarget = { 0 };
 static SImage s_DepthTarget = { 0 };
 static SImage s_Texture = { 0 };
 
-static void __vectorcall TransformVec3Stream( __m128 m00, __m128 m01, __m128 m02, __m128 m03,
+static void __vectorcall TransformPos3Stream( __m128 m00, __m128 m01, __m128 m02, __m128 m03,
     __m128 m10, __m128 m11, __m128 m12, __m128 m13,
     __m128 m20, __m128 m21, __m128 m22, __m128 m23,
     __m128 m30, __m128 m31, __m128 m32, __m128 m33,
@@ -208,37 +122,36 @@ static void __vectorcall TransformVec3Stream( __m128 m00, __m128 m01, __m128 m02
 static void __vectorcall AffineTransformVec3Stream( __m128 m00, __m128 m01, __m128 m02,
     __m128 m10, __m128 m11, __m128 m12,
     __m128 m20, __m128 m21, __m128 m22,
-    __m128 m30, __m128 m31, __m128 m32,
-    const float* inX, const float* inY, const float* inZ, uint32_t count,
-    float* outX, float* outY, float* outZ )
+    SVertexStreams3 inVec, uint32_t count,
+    SVertexStreams3 outVec )
 {
     assert( count % SIMD_WIDTH == 0 );
 
     uint32_t batchCount = count / SIMD_WIDTH;
     for ( uint32_t i = 0; i < batchCount; ++i )
     {
-        __m128 x = _mm_load_ps( inX );
-        __m128 y = _mm_load_ps( inY );
-        __m128 z = _mm_load_ps( inZ );
+        __m128 x = _mm_load_ps( inVec.m_X );
+        __m128 y = _mm_load_ps( inVec.m_Y );
+        __m128 z = _mm_load_ps( inVec.m_Z );
         __m128 dotX, dotY, dotZ;
-        SIMDMath::Vec3DotVec4( x, y, z, m00, m10, m20, m30, dotX );
-        SIMDMath::Vec3DotVec4( x, y, z, m01, m11, m21, m31, dotY );
-        SIMDMath::Vec3DotVec4( x, y, z, m02, m12, m22, m32, dotZ );
-        _mm_store_ps( outX, dotX );
-        _mm_store_ps( outY, dotY );
-        _mm_store_ps( outZ, dotZ );
+        SIMDMath::Vec3DotVec3( x, y, z, m00, m10, m20, dotX );
+        SIMDMath::Vec3DotVec3( x, y, z, m01, m11, m21, dotY );
+        SIMDMath::Vec3DotVec3( x, y, z, m02, m12, m22, dotZ );
+        _mm_store_ps( outVec.m_X, dotX );
+        _mm_store_ps( outVec.m_Y, dotY );
+        _mm_store_ps( outVec.m_Z, dotZ );
 
-        inX += SIMD_WIDTH;
-        inY += SIMD_WIDTH;
-        inZ += SIMD_WIDTH;
-        outX += SIMD_WIDTH;
-        outY += SIMD_WIDTH;
-        outZ += SIMD_WIDTH;
+        inVec += SIMD_WIDTH;
+        outVec += SIMD_WIDTH;
     }
 }
 
-template <bool UseTexture, bool UseVertexColor>
-static void TransformVerticesToRasterizerCoordinates( SVertexStreams4 pos, SVertexStreams2 inTex, SVertexStreams2 outTex, SVertexStreams3 inColor, SVertexStreams3 outColor, uint32_t count )
+template <bool UseTexture, bool UseVertexColor, bool UseNormal>
+static void TransformVerticesToRasterizerCoordinates( SVertexStreams4 pos,
+    SVertexStreams2 inTex, SVertexStreams2 outTex,
+    SVertexStreams3 inColor, SVertexStreams3 outColor,
+    SVertexStreams3 normal,
+    uint32_t count )
 {
     assert( count % SIMD_WIDTH == 0 );
 
@@ -276,6 +189,13 @@ static void TransformVerticesToRasterizerCoordinates( SVertexStreams4 pos, SVert
             colorG = _mm_load_ps( inColor.m_Y );
             colorB = _mm_load_ps( inColor.m_Z );
         }
+        __m128 normalX, normalY, normalZ;
+        if ( UseNormal )
+        {
+            normalX = _mm_load_ps( normal.m_X );
+            normalY = _mm_load_ps( normal.m_Y );
+            normalZ = _mm_load_ps( normal.m_Z );
+        }
 
         x = _mm_fmadd_ps( x, rcpw, one ); // x = x / w - (-1)
         x = _mm_fmadd_ps( x, vHalfRasterizerWidth, half ); // Add 0.5 for rounding
@@ -302,11 +222,18 @@ static void TransformVerticesToRasterizerCoordinates( SVertexStreams4 pos, SVert
             colorB = _mm_mul_ps( colorB, rcpw );
         }
 
+        if ( UseNormal )
+        {
+            normalX = _mm_mul_ps( normalX, rcpw );
+            normalY = _mm_mul_ps( normalY, rcpw );
+            normalZ = _mm_mul_ps( normalZ, rcpw );
+        }
+
         _mm_store_si128( (__m128i*)pos.m_X, xi );
         _mm_store_si128( (__m128i*)pos.m_Y, yi );
         _mm_store_ps( pos.m_Z, z );
 
-        constexpr bool NeedRcpw = UseTexture || UseVertexColor;
+        constexpr bool NeedRcpw = UseTexture || UseVertexColor || UseNormal;
         if ( NeedRcpw )
         { 
             _mm_store_ps( pos.m_W, rcpw );
@@ -325,6 +252,13 @@ static void TransformVerticesToRasterizerCoordinates( SVertexStreams4 pos, SVert
             _mm_store_ps( outColor.m_Z, colorB );
         }
 
+        if ( UseNormal )
+        {
+            _mm_store_ps( normal.m_X, normalX );
+            _mm_store_ps( normal.m_Y, normalY );
+            _mm_store_ps( normal.m_Z, normalZ );
+        }
+
         pos += SIMD_WIDTH;
 
         if ( UseTexture )
@@ -337,6 +271,11 @@ static void TransformVerticesToRasterizerCoordinates( SVertexStreams4 pos, SVert
         {
             inColor += SIMD_WIDTH;
             outColor += SIMD_WIDTH;
+        }
+
+        if ( UseNormal )
+        {
+            normal += SIMD_WIDTH;
         }
     }
 }
@@ -353,7 +292,7 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
-template <bool UseTexture, bool UseVertexColor>
+template <bool UseTexture, bool UseVertexColor, ELightType LightType>
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
     // Calculate bounding box of the triangle and crop with the viewport
@@ -402,7 +341,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     float z_a = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, ba12, ba20, ba01 ); // Horizontal Z increment
     float z_b = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, bb12, bb20, bb01 ); // Vertical Z increment
     
-    constexpr bool NeedRcpw = UseTexture || UseVertexColor;
+    constexpr bool NeedRcpw = UseTexture || UseVertexColor || LightType != ELightType::eInvalid;
     float rcpw_row, rcpw_a, rcpw_b;
     if ( NeedRcpw )
     { 
@@ -440,6 +379,24 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         colorB_row = BarycentricInterplation( v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, bw0_row, bw1_row, bw2_row ); // colorB at the minimum of the bounding box
         colorB_a = BarycentricInterplation( v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, ba12, ba20, ba01 ); // Horizontal colorB increment
         colorB_b = BarycentricInterplation( v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, bb12, bb20, bb01 ); // Vertical colorB increment
+    }
+
+    float normalX_row, normalX_a, normalX_b;
+    float normalY_row, normalY_a, normalY_b;
+    float normalZ_row, normalZ_a, normalZ_b;
+    if ( LightType != ELightType::eInvalid )
+    {
+        normalX_row = BarycentricInterplation( v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, bw0_row, bw1_row, bw2_row ); // normalX at the minimum of the bounding box
+        normalX_a = BarycentricInterplation( v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, ba12, ba20, ba01 ); // Horizontal normalX increment
+        normalX_b = BarycentricInterplation( v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, bb12, bb20, bb01 ); // Vertical normalX increment
+
+        normalY_row = BarycentricInterplation( v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, bw0_row, bw1_row, bw2_row ); // normalY at the minimum of the bounding box
+        normalY_a = BarycentricInterplation( v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, ba12, ba20, ba01 ); // Horizontal normalY increment
+        normalY_b = BarycentricInterplation( v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, bb12, bb20, bb01 ); // Vertical normalY increment
+
+        normalZ_row = BarycentricInterplation( v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, bw0_row, bw1_row, bw2_row ); // normalZ at the minimum of the bounding box
+        normalZ_a = BarycentricInterplation( v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, ba12, ba20, ba01 ); // Horizontal normalZ increment
+        normalZ_b = BarycentricInterplation( v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, bb12, bb20, bb01 ); // Vertical normalZ increment
     }
 
     // Apply top left rule
@@ -482,6 +439,14 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
             colorB = colorB_row;
         }
 
+        float normalX, normalY, normalZ;
+        if ( LightType != ELightType::eInvalid )
+        {
+            normalX = normalX_row;
+            normalY = normalY_row;
+            normalZ = normalZ_row;
+        }
+
         for ( pX = minX; pX <= maxX; pX += s_SubpixelStep, imgX += 1 )
         {
             if ( ( w0 | w1 | w2 ) >= 0 ) // counter-clockwise triangle has positive area
@@ -520,6 +485,27 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     b *= s_BaseColor[ 2 ];
                     a *= s_BaseColor[ 3 ];
 
+                    if ( LightType != ELightType::eInvalid )
+                    {
+                        float vertexNormalX = normalX * w;
+                        float vertexNormalY = normalY * w;
+                        float vertexNormalZ = normalZ * w;
+
+                        // Re-normalize
+                        float length = vertexNormalX * vertexNormalX + vertexNormalY * vertexNormalY + vertexNormalZ * vertexNormalZ;
+                        float rcpDenorm = 1.0f / sqrtf( length );
+                        vertexNormalX *= rcpDenorm;
+                        vertexNormalY *= rcpDenorm;
+                        vertexNormalZ *= rcpDenorm;
+
+                        float NdotL = vertexNormalX * s_LightPosition[ 0 ] + vertexNormalY * s_LightPosition[ 1 ] + vertexNormalZ * s_LightPosition[ 2 ];
+                        NdotL = std::max( 0.f, NdotL );
+
+                        r = r * s_LightColor[ 0 ] * NdotL;
+                        g = g * s_LightColor[ 1 ] * NdotL;
+                        b = b * s_LightColor[ 2 ] * NdotL;
+                    }
+
                     uint8_t ri = uint8_t( r * 255.f + 0.5f );
                     uint8_t gi = uint8_t( g * 255.f + 0.5f );
                     uint8_t bi = uint8_t( b * 255.f + 0.5f );
@@ -551,6 +537,13 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                 colorG += colorG_a;
                 colorB += colorB_a;
             }
+
+            if ( LightType != ELightType::eInvalid )
+            {
+                normalX += normalX_a;
+                normalY += normalY_a;
+                normalZ += normalZ_a;
+            }
         }
 
         w0_row += b12;
@@ -576,13 +569,20 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
             colorG_row += colorG_b;
             colorB_row += colorB_b;
         }
+
+        if ( LightType != ELightType::eInvalid )
+        {
+            normalX_row += normalX_b;
+            normalY_row += normalY_b;
+            normalZ_row += normalZ_b;
+        }
     }
 }
 
-template <bool UseTexture, bool UseVertexColor, bool IsIndexed>
-static void RasterizeTriangles( SVertexStreams4 pos, SVertexStreams2 texcoord, SVertexStreams3 color, const uint32_t* indices, uint32_t trianglesCount )
+template <bool UseTexture, bool UseVertexColor, ELightType LightType, bool IsIndexed>
+static void RasterizeTriangles( SVertexStreams4 pos, SVertexStreams2 texcoord, SVertexStreams3 color, SVertexStreams3 normal, const uint32_t* indices, uint32_t trianglesCount )
 {
-    constexpr bool NeedRcpw = UseTexture || UseVertexColor;
+    constexpr bool NeedRcpw = UseTexture || UseVertexColor || LightType != ELightType::eInvalid;
 
     const int32_t* posXi = (int32_t*)pos.m_X;
     const int32_t* posYi = (int32_t*)pos.m_Y;
@@ -623,38 +623,48 @@ static void RasterizeTriangles( SVertexStreams4 pos, SVertexStreams2 texcoord, S
             v1.SetColor( color.m_X[ i1 ], color.m_Y[ i1 ], color.m_Z[ i1 ] );
             v2.SetColor( color.m_X[ i2 ], color.m_Y[ i2 ], color.m_Z[ i2 ] );
         }
-        RasterizeTriangle<UseTexture, UseVertexColor>( v0, v1 ,v2 );
+        if ( LightType != ELightType::eInvalid )
+        {
+            v0.SetNormal( normal.m_X[ i0 ], normal.m_Y[ i0 ], normal.m_Z[ i0 ] );
+            v1.SetNormal( normal.m_X[ i1 ], normal.m_Y[ i1 ], normal.m_Z[ i1 ] );
+            v2.SetNormal( normal.m_X[ i2 ], normal.m_Y[ i2 ], normal.m_Z[ i2 ] );
+        }
+        RasterizeTriangle<UseTexture, UseVertexColor, LightType>( v0, v1 ,v2 );
     }
 }
 
 
-static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor )
+static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor, ELightType lightType )
 {
-    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x10 : 0 );
+    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x10 : 0 ) | ( lightType << 2 );
 }
 
 static uint32_t MakePipelineStateIndex( const SPipelineState& state )
 {
-    return MakePipelineStateIndex( state.m_UseTexture, state.m_UseVertexColor );
+    return MakePipelineStateIndex( state.m_UseTexture, state.m_UseVertexColor, state.m_LightType );
 }
 
-template <bool UseTexture, bool UseVertexColor>
+template <bool UseTexture, bool UseVertexColor, ELightType LightType>
 SPipelineFunctionPointers GetPipelineFunctionPointers()
 {
     SPipelineFunctionPointers ptrs;
-    ptrs.m_TransformVerticesToRasterizerCoordinatesFunction = TransformVerticesToRasterizerCoordinates<UseTexture, UseVertexColor>;
-    ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, false>;
-    ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, true>;
+    ptrs.m_TransformVerticesToRasterizerCoordinatesFunction = TransformVerticesToRasterizerCoordinates<UseTexture, UseVertexColor, LightType != ELightType::eInvalid>;
+    ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, LightType, false>;
+    ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, LightType, true>;
     return ptrs;
 }
 
 void Rasterizer::Initialize()
 {
-#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor ) s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( useTexture, useVertexColor ) ] = GetPipelineFunctionPointers< useTexture, useVertexColor >();
-    SET_PIPELINE_FUNCTION_POINTERS( false, false )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true )
+#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor, lightType ) s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( useTexture, useVertexColor, lightType ) ] = GetPipelineFunctionPointers< useTexture, useVertexColor, lightType >();
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::eInvalid )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::eInvalid )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::eInvalid )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::eInvalid )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::eDirectional )
 #undef SET_PIPELINE_FUNCTION_POINTERS
 }
 
@@ -663,6 +673,13 @@ void Rasterizer::SetPositionStreams( const float* x, const float* y, const float
     s_StreamSourcePosX = x;
     s_StreamSourcePosY = y;
     s_StreamSourcePosZ = z;
+}
+
+void Rasterizer::SetNormalStreams( const float* x, const float* y, const float* z )
+{
+    s_StreamSourceNormalX = x;
+    s_StreamSourceNormalY = y;
+    s_StreamSourceNormalZ = z;
 }
 
 void Rasterizer::SetTexcoordStreams( const float* texU, const float* texV )
@@ -688,6 +705,11 @@ void Rasterizer::SetViewProjectionMatrix( const float* matrix )
     memcpy( s_ViewProjectionMatrix, matrix, sizeof( s_ViewProjectionMatrix ) );
 }
 
+void Rasterizer::SetNormalMatrix( const float* matrix )
+{
+    memcpy( s_NormalMatrix, matrix, sizeof( s_NormalMatrix ) );
+}
+
 void Rasterizer::SetViewport( const SViewport& viewport )
 {
     s_Viewport = viewport;
@@ -711,6 +733,16 @@ void Rasterizer::SetDepthTarget( const SImage& image )
 void Rasterizer::SetBaseColor( const float* color )
 {
     memcpy( s_BaseColor, color, sizeof( s_BaseColor ) );
+}
+
+void Rasterizer::SetLightPosition( const float* position )
+{
+    memcpy( s_LightPosition, position, sizeof( s_LightPosition ) );
+}
+
+void Rasterizer::SetLightColor( const float* color )
+{
+    memcpy( s_LightColor, color, sizeof( s_LightColor ) );
 }
 
 void Rasterizer::SetTexture( const SImage& image )
@@ -752,10 +784,30 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
         __m128 m33 = _mm_set1_ps( s_ViewProjectionMatrix[ 15 ] );
 
         const SVertexStreams3 sourcePosStream = { const_cast<float*>( s_StreamSourcePosX ), const_cast<float*>( s_StreamSourcePosY ), const_cast<float*>( s_StreamSourcePosZ ) };
-        TransformVec3Stream( m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33,
+        TransformPos3Stream( m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33,
             sourcePosStream + baseVertexLocation,
             roundedUpVerticesCount,
             posStream );
+    }
+
+    SVertexStreams3 normalStream;
+    if ( s_PipelineState.m_LightType != ELightType::eInvalid )
+    {
+        normalStream.Allocate( streamSize );
+
+        // transform normals
+        __m128 m00 = _mm_set1_ps( s_NormalMatrix[ 0 ] );
+        __m128 m01 = _mm_set1_ps( s_NormalMatrix[ 1 ] );
+        __m128 m02 = _mm_set1_ps( s_NormalMatrix[ 2 ] );
+        __m128 m10 = _mm_set1_ps( s_NormalMatrix[ 3 ] );
+        __m128 m11 = _mm_set1_ps( s_NormalMatrix[ 4 ] );
+        __m128 m12 = _mm_set1_ps( s_NormalMatrix[ 5 ] );
+        __m128 m20 = _mm_set1_ps( s_NormalMatrix[ 6 ] );
+        __m128 m21 = _mm_set1_ps( s_NormalMatrix[ 7 ] );
+        __m128 m22 = _mm_set1_ps( s_NormalMatrix[ 8 ] );
+
+        const SVertexStreams3 sourceNormalStream = { const_cast<float*>( s_StreamSourceNormalX ), const_cast<float*>( s_StreamSourceNormalY ), const_cast<float*>( s_StreamSourceNormalZ ) };
+        AffineTransformVec3Stream( m00, m01, m02, m10, m11, m12, m20, m21, m22, sourceNormalStream + baseVertexLocation, roundedUpVerticesCount, normalStream );
     }
 
     SVertexStreams2 texStream;
@@ -774,15 +826,16 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     s_PipelineFunctionPtrs.m_TransformVerticesToRasterizerCoordinatesFunction( posStream,
         sourceTexStream + baseVertexLocation, texStream,
         sourceColorStream + baseVertexLocation, colorStream,
+        normalStream,
         roundedUpVerticesCount );
 
     if ( useIndex )
     { 
-        s_PipelineFunctionPtrs.m_RasterizerFunctionIndexed( posStream, texStream, colorStream, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
+        s_PipelineFunctionPtrs.m_RasterizerFunctionIndexed( posStream, texStream, colorStream, normalStream, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
     }
     else
     {
-        s_PipelineFunctionPtrs.m_RasterizerFunction( posStream, texStream, colorStream, nullptr, trianglesCount );
+        s_PipelineFunctionPtrs.m_RasterizerFunction( posStream, texStream, colorStream, normalStream, nullptr, trianglesCount );
     }
 
     posStream.Free();
@@ -793,6 +846,10 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     if ( s_PipelineState.m_UseVertexColor )
     { 
         colorStream.Free();
+    }
+    if ( s_PipelineState.m_LightType != ELightType::eInvalid )
+    {
+        normalStream.Free();
     }
 }
 

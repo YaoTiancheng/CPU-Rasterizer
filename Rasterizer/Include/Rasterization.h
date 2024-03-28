@@ -17,19 +17,28 @@ namespace Rasterizer
         uint32_t m_Height;
     };
 
+    enum ELightType
+    {
+        eInvalid,
+        eDirectional,
+    };
+
     struct SPipelineState
     {
         SPipelineState()
-            : m_UseTexture( false )
+            : m_LightType( ELightType::eInvalid )
+            , m_UseTexture( false )
             , m_UseVertexColor( false )
         {}
         
-        SPipelineState( bool useTexture, bool useVertexColor )
-            : m_UseTexture( useTexture )
+        SPipelineState( bool useTexture, bool useVertexColor, ELightType lightType )
+            : m_LightType( lightType )
+            , m_UseTexture( useTexture )
             , m_UseVertexColor( useVertexColor )
         {
         }
 
+        ELightType m_LightType;
         bool m_UseTexture;
         bool m_UseVertexColor;
     };
@@ -37,6 +46,8 @@ namespace Rasterizer
     void Initialize();
 
     void SetPositionStreams( const float* x, const float* y, const float* z );
+
+    void SetNormalStreams( const float* x, const float* y, const float* z );
 
     void SetTexcoordStreams( const float* texU, const float* texV );
 
@@ -46,6 +57,8 @@ namespace Rasterizer
 
     void SetViewProjectionMatrix( const float* matrix );
 
+    void SetNormalMatrix( const float* matrix );
+
     void SetViewport( const SViewport& viewport );
 
     void SetRenderTarget( const SImage& image );
@@ -53,6 +66,10 @@ namespace Rasterizer
     void SetDepthTarget( const SImage& image );
 
     void SetBaseColor( const float* color );
+
+    void SetLightPosition( const float* position );
+
+    void SetLightColor( const float* color );
 
     void SetTexture( const SImage& image );
 
