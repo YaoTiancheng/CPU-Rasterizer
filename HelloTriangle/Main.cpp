@@ -97,11 +97,11 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
 
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;
-    renderTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
+    renderTarget->m_Bits = (uint8_t*)malloc( width * height * 4 );
 
     depthTarget->m_Width = width;
     depthTarget->m_Height = height;
-    depthTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
+    depthTarget->m_Bits = (uint8_t*)malloc( width * height * 4 );
 
     return true;
 }
@@ -109,8 +109,8 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
 static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, uint8_t* vertexBuffer )
 {
     free( vertexBuffer );
-    _aligned_free( renderTarget->m_Bits );
-    _aligned_free( depthTarget->m_Bits );
+    free( renderTarget->m_Bits );
+    free( depthTarget->m_Bits );
 }
 
 int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )

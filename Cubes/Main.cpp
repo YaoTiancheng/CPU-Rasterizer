@@ -114,7 +114,7 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     texcoordStream->m_Offset = offsetof( SVertex, m_TexU );
     texcoordStream->m_Stride = sizeof( SVertex );
 
-    indices = (uint32_t*)_aligned_malloc( 36 * 4, 16 );
+    indices = (uint32_t*)malloc( 36 * 4 );
     indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
     indices[ 3 ] = 1; indices[ 4 ] = 0; indices[ 5 ] = 3;
     indices[ 6 ] = 4; indices[ 7 ] = 5; indices[ 8 ] = 6;
@@ -132,11 +132,11 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
 
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;
-    renderTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
+    renderTarget->m_Bits = (uint8_t*)malloc( width * height * 4 );
 
     depthTarget->m_Width = width;
     depthTarget->m_Height = height;
-    depthTarget->m_Bits = (uint8_t*)_aligned_malloc( width * height * 4, 16 );
+    depthTarget->m_Bits = (uint8_t*)malloc( width * height * 4 );
 
     // Load the texture from file
     ComPtr<IWICImagingFactory> WICImagingFactory;
@@ -176,17 +176,17 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     }
 
     const uint32_t textureByteSize = texture->m_Width * texture->m_Height * 4;
-    texture->m_Bits = (uint8_t*)_aligned_malloc( textureByteSize, 16 );
+    texture->m_Bits = (uint8_t*)malloc( textureByteSize );
     return SUCCEEDED( convertedFrame->CopyPixels( nullptr, texture->m_Width * 4, textureByteSize, (BYTE*)texture->m_Bits ) );
 }
 
 static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, uint8_t* vertexBuffer, uint32_t* indices )
 {
     free( vertexBuffer );
-    _aligned_free( indices );
-    _aligned_free( renderTarget->m_Bits );
-    _aligned_free( depthTarget->m_Bits );
-    _aligned_free( texture->m_Bits );
+    free( indices );
+    free( renderTarget->m_Bits );
+    free( depthTarget->m_Bits );
+    free( texture->m_Bits );
 }
 
 static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
