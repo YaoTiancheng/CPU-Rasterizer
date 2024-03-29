@@ -2,6 +2,25 @@
 
 namespace Rasterizer
 {
+    struct SStream
+    {
+        SStream() 
+            : m_Offset( 0 )
+            , m_Stride( 0 )
+            , m_Data( nullptr )
+        {}
+
+        SStream( uint32_t offset, uint32_t stride, uint8_t* data )
+            : m_Offset( offset )
+            , m_Stride( stride )
+            , m_Data( data )
+        {}
+
+        uint32_t m_Offset;
+        uint32_t m_Stride;
+        uint8_t* m_Data;
+    };
+
     struct SViewport
     {
         uint32_t m_Left;
@@ -45,13 +64,13 @@ namespace Rasterizer
 
     void Initialize();
 
-    void SetPositionStreams( const float* x, const float* y, const float* z );
+    void SetPositionStream( const SStream& stream );
 
-    void SetNormalStreams( const float* x, const float* y, const float* z );
+    void SetNormalStream( const SStream& stream );
 
-    void SetTexcoordStreams( const float* texU, const float* texV );
+    void SetTexcoordStream( const SStream& stream );
 
-    void SetColorStreams( const float* r, const float* g, const float* b );
+    void SetColorStream( const SStream& stream );
 
     void SetIndexStream( const uint32_t* indices );
 

@@ -85,7 +85,6 @@
     <ClInclude Include="Include\MathHelper.h" />
     <ClInclude Include="Include\Rasterization.h" />
     <ClInclude Include="PCH.h" />
-    <ClInclude Include="VertexStreams.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="PCH.cpp">

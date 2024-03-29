@@ -1,7 +1,6 @@
 
 #include "PCH.h"
 #include "Rasterization.h"
-#include "MathHelper.h"
 
 using namespace Microsoft::WRL;
 using namespace DirectX;
@@ -72,16 +71,29 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, float*& vertexBuffer )
+static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget,
+    uint8_t*& vertexBuffer, Rasterizer::SStream* posStream, Rasterizer::SStream* colorStream )
 {
-    vertexBuffer = (float*)_aligned_malloc( 4 * 6 * sizeof( float ), 16 );
+    struct SVertex
+    {
+        float m_X, m_Y, m_Z;
+        float m_R, m_G, m_B;
+    };
 
-    vertexBuffer[ 0 ] = 0.5f; vertexBuffer[ 1 ] = 0.0f; vertexBuffer[ 2 ] = -0.5f;
-    vertexBuffer[ 4 ] = -0.5f; vertexBuffer[ 5 ] = 0.5f; vertexBuffer[ 6 ] = -0.5f;
-    vertexBuffer[ 8 ] = 0.0f; vertexBuffer[ 9 ] = 0.0f; vertexBuffer[ 10 ] = 0.0f;
-    vertexBuffer[ 12 ] = 1.0f; vertexBuffer[ 13 ] = 0.0f; vertexBuffer[ 14 ] = 0.0f;
-    vertexBuffer[ 16 ] = 0.0f; vertexBuffer[ 17 ] = 1.0f; vertexBuffer[ 18 ] = 0.0f;
-    vertexBuffer[ 20 ] = 0.0f; vertexBuffer[ 21 ] = 0.0f; vertexBuffer[ 22 ] = 1.0f;
+    vertexBuffer = (uint8_t*)malloc( 4 * sizeof( SVertex ) );
+
+    SVertex* vertices = (SVertex*)vertexBuffer;
+    vertices[ 0 ] = { 0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f };
+    vertices[ 1 ] = { 0.0f, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f };
+    vertices[ 2 ] = { -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f };
+
+    posStream->m_Data = vertexBuffer;
+    posStream->m_Offset = 0;
+    posStream->m_Stride = sizeof( SVertex );
+
+    colorStream->m_Data = vertexBuffer;
+    colorStream->m_Offset = offsetof( SVertex, m_R );
+    colorStream->m_Stride = sizeof( SVertex );
 
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;
@@ -94,9 +106,9 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     return true;
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, float* vertexBuffer )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, uint8_t* vertexBuffer )
 {
-    _aligned_free( vertexBuffer );
+    free( vertexBuffer );
     _aligned_free( renderTarget->m_Bits );
     _aligned_free( depthTarget->m_Bits );
 }
@@ -142,8 +154,9 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     UpdateWindow( hWnd );
 
     Rasterizer::SImage depthTarget;
-    float* vertexBuffer = nullptr;
-    if ( !CreateRenderData( width, height, &s_RenderTarget, &depthTarget, vertexBuffer ) )
+    uint8_t* vertexBuffer = nullptr;
+    Rasterizer::SStream posStream, colorStream;
+    if ( !CreateRenderData( width, height, &s_RenderTarget, &depthTarget, vertexBuffer, &posStream, &colorStream ) )
     {
         return 0;
     }
@@ -155,8 +168,8 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     viewport.m_Height = height;
 
     Rasterizer::Initialize();
-    Rasterizer::SetPositionStreams( vertexBuffer, vertexBuffer + 4, vertexBuffer + 8 );
-    Rasterizer::SetColorStreams( vertexBuffer + 12, vertexBuffer + 16, vertexBuffer + 20 );
+    Rasterizer::SetPositionStream( posStream );
+    Rasterizer::SetColorStream( colorStream );
     Rasterizer::SetRenderTarget( s_RenderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
