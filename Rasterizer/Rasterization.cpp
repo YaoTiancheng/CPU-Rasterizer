@@ -834,7 +834,7 @@ static uint32_t ComputeVertexLayout( const SPipelineState& pipelineState, uint32
 
 static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocation, uint32_t trianglesCount, bool useIndex )
 {
-    const uint32_t verticesCount = trianglesCount * 3;
+    const uint32_t verticesCount = s_StreamSourcePos.m_Size / s_StreamSourcePos.m_Stride; // It is caller's responsibility to make sure other streams contains same numbers of vertices
     const uint32_t roundedUpVerticesCount = MathHelper::DivideAndRoundUp( verticesCount, (uint32_t)SIMD_WIDTH ) * SIMD_WIDTH;
 
     // Compute intermediate vertex layout

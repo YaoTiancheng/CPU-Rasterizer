@@ -17,8 +17,11 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloTriangle", "HelloTrian
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lighting", "Lighting\Lighting.vcxproj", "{36F99BE0-3EE8-472B-84B1-95147D6E8710}"
 	ProjectSection(ProjectDependencies) = postProject
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F} = {4B62876F-D951-4DC3-A75F-CE8EC056DD1F}
 		{56A956CB-4444-4CF0-8EBF-9602DAD80C6A} = {56A956CB-4444-4CF0-8EBF-9602DAD80C6A}
 	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Utilities", "Utilities\Utilities.vcxproj", "{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -42,6 +45,10 @@ Global
 		{36F99BE0-3EE8-472B-84B1-95147D6E8710}.Debug|x64.Build.0 = Debug|x64
 		{36F99BE0-3EE8-472B-84B1-95147D6E8710}.Release|x64.ActiveCfg = Release|x64
 		{36F99BE0-3EE8-472B-84B1-95147D6E8710}.Release|x64.Build.0 = Release|x64
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Debug|x64.ActiveCfg = Debug|x64
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Debug|x64.Build.0 = Debug|x64
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Release|x64.ActiveCfg = Release|x64
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

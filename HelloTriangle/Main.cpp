@@ -80,7 +80,8 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
         float m_R, m_G, m_B;
     };
 
-    vertexBuffer = (uint8_t*)malloc( 4 * sizeof( SVertex ) );
+    const uint32_t vertexBufferSize = 4 * sizeof( SVertex );
+    vertexBuffer = (uint8_t*)malloc( vertexBufferSize );
 
     SVertex* vertices = (SVertex*)vertexBuffer;
     vertices[ 0 ] = { 0.5f, -0.5f, 0.0f, 1.0f, 0.0f, 0.0f };
@@ -90,10 +91,12 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     posStream->m_Data = vertexBuffer;
     posStream->m_Offset = 0;
     posStream->m_Stride = sizeof( SVertex );
+    posStream->m_Size = vertexBufferSize;
 
     colorStream->m_Data = vertexBuffer;
     colorStream->m_Offset = offsetof( SVertex, m_R );
     colorStream->m_Stride = sizeof( SVertex );
+    colorStream->m_Size = vertexBufferSize;
 
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;

@@ -7,17 +7,20 @@ namespace Rasterizer
         SStream() 
             : m_Offset( 0 )
             , m_Stride( 0 )
+            , m_Size( 0 )
             , m_Data( nullptr )
         {}
 
-        SStream( uint32_t offset, uint32_t stride, uint8_t* data )
+        SStream( uint32_t offset, uint32_t stride, uint32_t size, uint8_t* data )
             : m_Offset( offset )
             , m_Stride( stride )
+            , m_Size( size )
             , m_Data( data )
         {}
 
         uint32_t m_Offset;
         uint32_t m_Stride;
+        uint32_t m_Size;
         uint8_t* m_Data;
     };
 
