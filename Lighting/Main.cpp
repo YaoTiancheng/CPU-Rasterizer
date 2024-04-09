@@ -120,11 +120,11 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     XMStoreFloat3x3( (XMFLOAT3X3*)tempMatrix, rotationMatrix );
     Rasterizer::SetNormalMatrix( tempMatrix );
 
-    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, -1.f, 0.f );
+    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, -1.2f, 0.f );
     XMMATRIX viewMatrix = XMMatrixSet( 1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 7.f, 1.f );
+        0.f, 0.f, 7.5f, 1.f );
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 50.0f ), aspectRatio, 2.f, 1000.f );
     XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
     XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( worldMatrix, XMMatrixMultiply( rotationMatrix, viewProjectionMatrix ) );
