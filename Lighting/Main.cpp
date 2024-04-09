@@ -68,6 +68,9 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
         return false;
     }
 
+    // The teapot.obj is in right hand coordinate, convert it to left hand coordinate
+    mesh->FlipCoordinateHandness();
+
     posStream->m_Data = mesh->GetVertices();
     posStream->m_Offset = 0;
     posStream->m_Stride = mesh->GetVertexSize();
@@ -117,13 +120,14 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     XMStoreFloat3x3( (XMFLOAT3X3*)tempMatrix, rotationMatrix );
     Rasterizer::SetNormalMatrix( tempMatrix );
 
+    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, -1.f, 0.f );
     XMMATRIX viewMatrix = XMMatrixSet( 1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 10.f, 1.f );
-    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 2.f, 1000.f );
+        0.f, 0.f, 7.f, 1.f );
+    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 50.0f ), aspectRatio, 2.f, 1000.f );
     XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
-    XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( rotationMatrix, viewProjectionMatrix );
+    XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( worldMatrix, XMMatrixMultiply( rotationMatrix, viewProjectionMatrix ) );
     XMStoreFloat4x4( (XMFLOAT4X4*)tempMatrix, worldViewProjectionMatrix );
     Rasterizer::SetViewProjectionMatrix( tempMatrix );
 

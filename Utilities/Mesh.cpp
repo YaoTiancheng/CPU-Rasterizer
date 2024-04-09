@@ -75,3 +75,17 @@ uint32_t CMesh::ComputeVertexLayout( uint32_t vertexFormat, uint32_t* positionOf
     vertexSize += ( vertexFormat & EVertexFormat::eTexcoord ) != 0 ? sizeof( float ) * 2 : 0;
     return vertexSize;
 }
+
+void CMesh::FlipCoordinateHandness()
+{
+    // Flip position and normal against the yz plane
+    float* position = GetPosition( 0 );
+    float* normal = GetNormal( 0 );
+    for ( uint32_t i = 0; i < m_VerticesCount; ++i )
+    {
+        position[ 0 ] = -position[ 0 ];
+        normal[ 0 ] = -normal[ 0 ];
+        position = (float*)( (uint8_t*)position + m_VertexSize );
+        normal = (float*)( (uint8_t*)normal + m_VertexSize );
+    }
+}
