@@ -1,6 +1,6 @@
 
 #include "PCH.h"
-#include "Rasterization.h"
+#include "Rasterizer.h"
 
 using namespace Microsoft::WRL;
 using namespace DirectX;

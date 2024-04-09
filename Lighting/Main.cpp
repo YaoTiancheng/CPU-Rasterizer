@@ -1,6 +1,6 @@
 
 #include "PCH.h"
-#include "Rasterization.h"
+#include "Rasterizer.h"
 #include "Mesh.h"
 #include "MeshLoader.h"
 

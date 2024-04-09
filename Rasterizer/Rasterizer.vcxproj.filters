@@ -18,7 +18,7 @@
     <ClInclude Include="PCH.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Include\Rasterization.h">
+    <ClInclude Include="Include\Rasterizer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Include\MathHelper.h">

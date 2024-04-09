@@ -83,7 +83,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Include\MathHelper.h" />
-    <ClInclude Include="Include\Rasterization.h" />
+    <ClInclude Include="Include\Rasterizer.h" />
     <ClInclude Include="PCH.h" />
   </ItemGroup>
   <ItemGroup>

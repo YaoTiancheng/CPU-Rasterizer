@@ -1,5 +1,5 @@
 #include "PCH.h"
-#include "Rasterization.h"
+#include "Rasterizer.h"
 #include "ImageOps.inl"
 #include "SIMDMath.inl"
 #include "MathHelper.h"
