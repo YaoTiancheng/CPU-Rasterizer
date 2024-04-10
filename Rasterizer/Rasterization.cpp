@@ -80,18 +80,40 @@ static SPipelineFunctionPointers s_PipelineFunctionPtrsTable[ MAX_PIPELINE_STATE
 static SPipelineState s_PipelineState;
 static SPipelineFunctionPointers s_PipelineFunctionPtrs;
 
-static float s_ViewProjectionMatrix[ 16 ] =
-    { 
-        1.f, 0.f, 0.f, 0.f, 
+static SMatrix s_WorldMatrix =
+    {
+        1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 0.f, 1.f 
+        0.f, 0.f, 0.f, 1.f,
     };
-static float s_NormalMatrix[ 9 ] =
+static SMatrix s_NormalMatrix =
     {
-        1.f, 0.f, 0.f,
-        0.f, 1.f, 0.f,
-        0.f, 0.f, 1.f,
+        1.f, 0.f, 0.f, 0.f,
+        0.f, 1.f, 0.f, 0.f,
+        0.f, 0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f, 1.f,
+    };
+static SMatrix s_ViewMatrix =
+    {
+        1.f, 0.f, 0.f, 0.f,
+        0.f, 1.f, 0.f, 0.f,
+        0.f, 0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f, 1.f,
+    };
+static SMatrix s_ProjectionMatrix =
+    {
+        1.f, 0.f, 0.f, 0.f,
+        0.f, 1.f, 0.f, 0.f,
+        0.f, 0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f, 1.f,
+    };
+static SMatrix s_WorldViewProjectionMatrix = 
+    {
+        1.f, 0.f, 0.f, 0.f,
+        0.f, 1.f, 0.f, 0.f,
+        0.f, 0.f, 1.f, 0.f,
+        0.f, 0.f, 0.f, 1.f,
     };
 static float s_BaseColor[ 4 ] = { 1.f, 1.f, 1.f, 1.f };
 static float s_LightPosition[ 4 ] = { 0.f, 0.f, 0.f, 0.f };
@@ -112,6 +134,100 @@ static const uint32_t* s_StreamSourceIndex = nullptr;
 static SImage s_RenderTarget = { 0 };
 static SImage s_DepthTarget = { 0 };
 static SImage s_Texture = { 0 };
+
+static inline __m128 GatherMatrixColumn( const SMatrix& m, uint32_t column )
+{
+    assert( column < 4 );
+    SFloat4A float4;
+    const float* base = m.m_Data + column;
+    float4.m_Data[ 0 ] = base[ 0 ];
+    float4.m_Data[ 1 ] = base[ 4 ];
+    float4.m_Data[ 2 ] = base[ 8 ];
+    float4.m_Data[ 3 ] = base[ 12 ];
+    return _mm_load_ps( float4.m_Data );
+}
+
+static inline float SSEDotFloat4( __m128 a, __m128 b )
+{
+    __m128 mul = _mm_mul_ps( a, b ); // mul = [A|B|C|D]
+    __m128 shuf = _mm_shuffle_ps( mul, mul, _MM_SHUFFLE( 2, 3, 0, 1 ) ); // shuf = [B|A|D|C]
+    __m128 sums = _mm_add_ps( mul, shuf ); // sums = [A+B|B+A|C+D|D+C]
+    shuf = _mm_movehl_ps( shuf, sums ); // shuf = [B|A|A+B|B+A]
+    sums = _mm_add_ss( sums, shuf ); // sums = [A+B|B+A|C+D|D+C+B+A]
+    return _mm_cvtss_f32( sums );
+}
+
+static SMatrix MatrixMultiply4x3( const SMatrix& lhs, const SMatrix& rhs )
+{
+    __m128 r0 = _mm_load_ps( lhs.m_Data );
+    __m128 r1 = _mm_load_ps( lhs.m_Data + 4 );
+    __m128 r2 = _mm_load_ps( lhs.m_Data + 8 );
+    __m128 r3 = _mm_load_ps( lhs.m_Data + 12 );
+    __m128 c0 = GatherMatrixColumn( rhs, 0 );
+    __m128 c1 = GatherMatrixColumn( rhs, 1 );
+    __m128 c2 = GatherMatrixColumn( rhs, 2 );
+
+    SMatrix result;
+    result.m_00 = SSEDotFloat4( r0, c0 );
+    result.m_01 = SSEDotFloat4( r0, c1 );
+    result.m_02 = SSEDotFloat4( r0, c2 );
+    result.m_03 = 0.f;
+    result.m_10 = SSEDotFloat4( r1, c0 );
+    result.m_11 = SSEDotFloat4( r1, c1 );
+    result.m_12 = SSEDotFloat4( r1, c2 );
+    result.m_13 = 0.f;
+    result.m_20 = SSEDotFloat4( r2, c0 );
+    result.m_21 = SSEDotFloat4( r2, c1 );
+    result.m_22 = SSEDotFloat4( r2, c2 );
+    result.m_23 = 0.f;
+    result.m_30 = SSEDotFloat4( r3, c0 );
+    result.m_31 = SSEDotFloat4( r3, c1 );
+    result.m_32 = SSEDotFloat4( r3, c2 );
+    result.m_33 = 1.f;
+    return result;
+}
+
+static SMatrix MatrixMultiply4x4( const SMatrix& lhs, const SMatrix& rhs )
+{
+    __m128 r0 = _mm_load_ps( lhs.m_Data );
+    __m128 r1 = _mm_load_ps( lhs.m_Data + 4 );
+    __m128 r2 = _mm_load_ps( lhs.m_Data + 8 );
+    __m128 r3 = _mm_load_ps( lhs.m_Data + 12 );
+    __m128 c0 = GatherMatrixColumn( rhs, 0 );
+    __m128 c1 = GatherMatrixColumn( rhs, 1 );
+    __m128 c2 = GatherMatrixColumn( rhs, 2 );
+    __m128 c3 = GatherMatrixColumn( rhs, 3 );
+
+    SMatrix result;
+    result.m_00 = SSEDotFloat4( r0, c0 );
+    result.m_01 = SSEDotFloat4( r0, c1 );
+    result.m_02 = SSEDotFloat4( r0, c2 );
+    result.m_03 = SSEDotFloat4( r0, c3 );
+    result.m_10 = SSEDotFloat4( r1, c0 );
+    result.m_11 = SSEDotFloat4( r1, c1 );
+    result.m_12 = SSEDotFloat4( r1, c2 );
+    result.m_13 = SSEDotFloat4( r1, c3 );
+    result.m_20 = SSEDotFloat4( r2, c0 );
+    result.m_21 = SSEDotFloat4( r2, c1 );
+    result.m_22 = SSEDotFloat4( r2, c2 );
+    result.m_23 = SSEDotFloat4( r2, c3 );
+    result.m_30 = SSEDotFloat4( r3, c0 );
+    result.m_31 = SSEDotFloat4( r3, c1 );
+    result.m_32 = SSEDotFloat4( r3, c2 );
+    result.m_33 = SSEDotFloat4( r3, c3 );
+    return result;
+}
+
+static void UpdateNormalMatrix()
+{
+    // TODO: This is incorrect if world matrix contains non-uniform scaling
+    s_NormalMatrix = s_WorldMatrix;
+}
+
+static void UpdateWorldViewProjectionMatrix()
+{
+    s_WorldViewProjectionMatrix = MatrixMultiply4x4( MatrixMultiply4x3( s_WorldMatrix, s_ViewMatrix ), s_ProjectionMatrix );
+}
 
 static inline __m128 __vectorcall GatherFloat4( const uint8_t* stream, uint32_t stride )
 {
@@ -757,14 +873,23 @@ void Rasterizer::SetIndexStream( const uint32_t* indices )
     s_StreamSourceIndex = indices;
 }
 
-void Rasterizer::SetViewProjectionMatrix( const float* matrix )
+void Rasterizer::SetWorldTransform( const SMatrix& matrix )
 {
-    memcpy( s_ViewProjectionMatrix, matrix, sizeof( s_ViewProjectionMatrix ) );
+    s_WorldMatrix = matrix;
+    UpdateNormalMatrix();
+    UpdateWorldViewProjectionMatrix();
 }
 
-void Rasterizer::SetNormalMatrix( const float* matrix )
+void Rasterizer::SetViewTransform( const SMatrix& matrix )
 {
-    memcpy( s_NormalMatrix, matrix, sizeof( s_NormalMatrix ) );
+    s_ViewMatrix = matrix;
+    UpdateWorldViewProjectionMatrix();
+}
+
+void Rasterizer::SetProjectionTransform( const SMatrix& matrix )
+{
+    s_ProjectionMatrix = matrix;
+    UpdateWorldViewProjectionMatrix();
 }
 
 void Rasterizer::SetViewport( const SViewport& viewport )
@@ -852,22 +977,22 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
 
     // transform vertex positions
     {
-        __m128 m00 = _mm_set1_ps( s_ViewProjectionMatrix[ 0 ] );
-        __m128 m01 = _mm_set1_ps( s_ViewProjectionMatrix[ 1 ] );
-        __m128 m02 = _mm_set1_ps( s_ViewProjectionMatrix[ 2 ] );
-        __m128 m03 = _mm_set1_ps( s_ViewProjectionMatrix[ 3 ] );
-        __m128 m10 = _mm_set1_ps( s_ViewProjectionMatrix[ 4 ] );
-        __m128 m11 = _mm_set1_ps( s_ViewProjectionMatrix[ 5 ] );
-        __m128 m12 = _mm_set1_ps( s_ViewProjectionMatrix[ 6 ] );
-        __m128 m13 = _mm_set1_ps( s_ViewProjectionMatrix[ 7 ] );
-        __m128 m20 = _mm_set1_ps( s_ViewProjectionMatrix[ 8 ] );
-        __m128 m21 = _mm_set1_ps( s_ViewProjectionMatrix[ 9 ] );
-        __m128 m22 = _mm_set1_ps( s_ViewProjectionMatrix[ 10 ] );
-        __m128 m23 = _mm_set1_ps( s_ViewProjectionMatrix[ 11 ] );
-        __m128 m30 = _mm_set1_ps( s_ViewProjectionMatrix[ 12 ] );
-        __m128 m31 = _mm_set1_ps( s_ViewProjectionMatrix[ 13 ] );
-        __m128 m32 = _mm_set1_ps( s_ViewProjectionMatrix[ 14 ] );
-        __m128 m33 = _mm_set1_ps( s_ViewProjectionMatrix[ 15 ] );
+        __m128 m00 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 0 ] );
+        __m128 m01 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 1 ] );
+        __m128 m02 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 2 ] );
+        __m128 m03 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 3 ] );
+        __m128 m10 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 4 ] );
+        __m128 m11 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 5 ] );
+        __m128 m12 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 6 ] );
+        __m128 m13 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 7 ] );
+        __m128 m20 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 8 ] );
+        __m128 m21 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 9 ] );
+        __m128 m22 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 10 ] );
+        __m128 m23 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 11 ] );
+        __m128 m30 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 12 ] );
+        __m128 m31 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 13 ] );
+        __m128 m32 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 14 ] );
+        __m128 m33 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 15 ] );
 
         const uint8_t* sourcePosStream = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
         TransformPos3Stream( m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33,
@@ -879,15 +1004,15 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     if ( s_PipelineState.m_LightType != ELightType::eInvalid )
     {
         // transform normals
-        __m128 m00 = _mm_set1_ps( s_NormalMatrix[ 0 ] );
-        __m128 m01 = _mm_set1_ps( s_NormalMatrix[ 1 ] );
-        __m128 m02 = _mm_set1_ps( s_NormalMatrix[ 2 ] );
-        __m128 m10 = _mm_set1_ps( s_NormalMatrix[ 3 ] );
-        __m128 m11 = _mm_set1_ps( s_NormalMatrix[ 4 ] );
-        __m128 m12 = _mm_set1_ps( s_NormalMatrix[ 5 ] );
-        __m128 m20 = _mm_set1_ps( s_NormalMatrix[ 6 ] );
-        __m128 m21 = _mm_set1_ps( s_NormalMatrix[ 7 ] );
-        __m128 m22 = _mm_set1_ps( s_NormalMatrix[ 8 ] );
+        __m128 m00 = _mm_set1_ps( s_NormalMatrix.m_Data[ 0 ] );
+        __m128 m01 = _mm_set1_ps( s_NormalMatrix.m_Data[ 1 ] );
+        __m128 m02 = _mm_set1_ps( s_NormalMatrix.m_Data[ 2 ] );
+        __m128 m10 = _mm_set1_ps( s_NormalMatrix.m_Data[ 4 ] );
+        __m128 m11 = _mm_set1_ps( s_NormalMatrix.m_Data[ 5 ] );
+        __m128 m12 = _mm_set1_ps( s_NormalMatrix.m_Data[ 6 ] );
+        __m128 m20 = _mm_set1_ps( s_NormalMatrix.m_Data[ 8 ] );
+        __m128 m21 = _mm_set1_ps( s_NormalMatrix.m_Data[ 9 ] );
+        __m128 m22 = _mm_set1_ps( s_NormalMatrix.m_Data[ 10 ] );
 
         const uint8_t* sourceNormalStream = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
         AffineTransformVec3Stream( m00, m01, m02, m10, m11, m12, m20, m21, m22, 

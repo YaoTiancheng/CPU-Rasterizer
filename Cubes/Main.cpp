@@ -207,18 +207,24 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     XMFLOAT4 baseColor[] = { { 1.f, 1.f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
 
-    XMMATRIX viewMatrix = XMMatrixSet( 1.f, 0.f, 0.f, 0.f,
+    Rasterizer::SMatrix matrix = 
+    {
+        1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 10.f, 1.f );
+        0.f, 0.f, 10.f, 1.f 
+    };
+    Rasterizer::SetViewTransform( matrix );
+
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 2.f, 1000.f );
-    XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
+    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
+    Rasterizer::SetProjectionTransform( matrix );
+    
     XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
 
     XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
     XMFLOAT3 cubeCenterMin( -( cubeCount.x - 1 ) * cubeSpacing.x * 0.5f, -( cubeCount.y - 1 ) * cubeSpacing.y * 0.5f, -( cubeCount.z - 1 ) * cubeSpacing.z * 0.5f );
-    float matrix[ 16 ];
     for ( int32_t z = 0; z < cubeCount.z; ++z )
     {
         for ( int32_t y = 0; y < cubeCount.y; ++y )
@@ -230,9 +236,9 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
                 XMFLOAT3 center( cubeCenterMin.x + cubeSpacing.x * x, cubeCenterMin.y + cubeSpacing.y * y, cubeCenterMin.z + cubeSpacing.z * z );
                 XMMATRIX translationMatrix = XMMatrixTranslation( center.x, center.y, center.z );
-                XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( XMMatrixMultiply( translationMatrix, rotationMatrix ), viewProjectionMatrix );
-                XMStoreFloat4x4( (XMFLOAT4X4*)matrix, worldViewProjectionMatrix );
-                Rasterizer::SetViewProjectionMatrix( matrix );
+                XMMATRIX worldMatrix = XMMatrixMultiply( translationMatrix, rotationMatrix );
+                XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldMatrix );
+                Rasterizer::SetWorldTransform( matrix );
 
                 Rasterizer::DrawIndexed( 0, 0, triangleCount );
             }

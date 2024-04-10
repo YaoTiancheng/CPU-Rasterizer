@@ -113,23 +113,23 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
         ++depthBit;
     }
 
-    float tempMatrix[ 16 ];
+    Rasterizer::SMatrix matrix;
 
     XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
-    
-    XMStoreFloat3x3( (XMFLOAT3X3*)tempMatrix, rotationMatrix );
-    Rasterizer::SetNormalMatrix( tempMatrix );
+    XMMATRIX worldMatrix = XMMatrixMultiply( XMMatrixTranslation( 0.f, -1.2f, 0.f ), rotationMatrix );
+    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldMatrix );
+    Rasterizer::SetWorldTransform( matrix );
 
-    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, -1.2f, 0.f );
-    XMMATRIX viewMatrix = XMMatrixSet( 1.f, 0.f, 0.f, 0.f,
+    matrix = Rasterizer::SMatrix(
+        1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 7.5f, 1.f );
+    Rasterizer::SetViewTransform( matrix );
+
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 50.0f ), aspectRatio, 2.f, 1000.f );
-    XMMATRIX viewProjectionMatrix = XMMatrixMultiply( viewMatrix, projectionMatrix );
-    XMMATRIX worldViewProjectionMatrix = XMMatrixMultiply( worldMatrix, XMMatrixMultiply( rotationMatrix, viewProjectionMatrix ) );
-    XMStoreFloat4x4( (XMFLOAT4X4*)tempMatrix, worldViewProjectionMatrix );
-    Rasterizer::SetViewProjectionMatrix( tempMatrix );
+    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
+    Rasterizer::SetProjectionTransform( matrix );
 
     Rasterizer::DrawIndexed( 0, 0, triangleCount );         
 }

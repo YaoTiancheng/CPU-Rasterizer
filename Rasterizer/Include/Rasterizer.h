@@ -2,6 +2,34 @@
 
 namespace Rasterizer
 {
+    struct alignas( 16 ) SMatrix
+    {
+        SMatrix() = default;
+    
+        SMatrix( float m00, float m01, float m02, float m03,
+            float m10, float m11, float m12, float m13, 
+            float m20, float m21, float m22, float m23, 
+            float m30, float m31, float m32, float m33 )
+            : m_00( m00 ), m_01( m01 ), m_02( m02 ), m_03( m03 )
+            , m_10( m10 ), m_11( m11 ), m_12( m12 ), m_13( m13 )
+            , m_20( m20 ), m_21( m21 ), m_22( m22 ), m_23( m23 )
+            , m_30( m30 ), m_31( m31 ), m_32( m32 ), m_33( m33 )
+        {
+        }
+
+        union
+        {
+            struct
+            {
+                float m_00, m_01, m_02, m_03;
+                float m_10, m_11, m_12, m_13;
+                float m_20, m_21, m_22, m_23;
+                float m_30, m_31, m_32, m_33;
+            };
+            float m_Data[ 16 ];
+        };
+    };
+
     struct SStream
     {
         SStream() 
@@ -77,9 +105,11 @@ namespace Rasterizer
 
     void SetIndexStream( const uint32_t* indices );
 
-    void SetViewProjectionMatrix( const float* matrix );
+    void SetWorldTransform( const SMatrix& matrix );
 
-    void SetNormalMatrix( const float* matrix );
+    void SetViewTransform( const SMatrix& matrix );
+
+    void SetProjectionTransform( const SMatrix& matrix );
 
     void SetViewport( const SViewport& viewport );
 
