@@ -65,18 +65,6 @@ struct SRasterizerVertex
     float m_NormalZ;
 };
 
-struct SVertexTransformArgs
-{
-    const uint8_t* m_InPos;
-    const uint8_t* m_InNormal;
-    uint8_t* m_OutPos;
-    uint8_t* m_OutNormal;
-    uint32_t m_PosStride;
-    uint32_t m_NormalStride;
-    uint32_t m_OutStride;
-    uint32_t m_Count;
-};
-
 typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
 typedef void (*RasterizeFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
 
@@ -271,10 +259,19 @@ static inline void __vectorcall ScatterInt4( __m128i value, uint8_t* stream, uin
     *(int32_t*)( stream + stride + stride + stride ) = int4.m_Data[ 3 ];
 }
 
-static void TransformVertices( const SVertexTransformArgs& args )
+static void TransformVertices( 
+    const uint8_t* inPos,
+    const uint8_t* inNormal,
+    uint8_t* outPos,
+    uint8_t* outNormal,
+    uint32_t posStride,
+    uint32_t normalStride,
+    uint32_t outStride,
+    uint32_t count
+    )
 {
-    assert( args.m_Count % SIMD_WIDTH == 0 );
-    const uint32_t batchCount = args.m_Count / SIMD_WIDTH;
+    assert( count % SIMD_WIDTH == 0 );
+    const uint32_t batchCount = count / SIMD_WIDTH;
 
     __m128 m00 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 0 ] );
     __m128 m01 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 1 ] );
@@ -293,11 +290,6 @@ static void TransformVertices( const SVertexTransformArgs& args )
     __m128 m32 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 14 ] );
     __m128 m33 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 15 ] );
 
-    const uint32_t outStride = args.m_OutStride;
-
-    const uint8_t* inPos = args.m_InPos;
-    uint8_t* outPos = args.m_OutPos;
-    const uint32_t posStride = args.m_PosStride;
     for ( uint32_t i = 0; i < batchCount; ++i )
     {
         __m128 x = GatherFloat4( inPos, posStride );
@@ -329,9 +321,6 @@ static void TransformVertices( const SVertexTransformArgs& args )
         m21 = _mm_set1_ps( s_NormalMatrix.m_Data[ 9 ] );
         m22 = _mm_set1_ps( s_NormalMatrix.m_Data[ 10 ] );
 
-        const uint8_t* inNormal = args.m_InNormal;
-        uint8_t* outNormal = args.m_OutNormal;
-        const uint32_t normalStride = args.m_NormalStride;
         for ( uint32_t i = 0; i < batchCount; ++i )
         {
             __m128 x = GatherFloat4( inNormal, normalStride );
@@ -1013,16 +1002,9 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
 
     // Vertex transform
     {
-        SVertexTransformArgs args;
-        args.m_InPos = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
-        args.m_InNormal = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
-        args.m_OutPos = posStream;
-        args.m_OutNormal = normalStream;
-        args.m_PosStride = s_StreamSourcePos.m_Stride;
-        args.m_NormalStride = s_StreamSourceNormal.m_Stride;
-        args.m_OutStride = vertexSize;
-        args.m_Count = roundedUpVerticesCount;
-        TransformVertices( args );
+        const uint8_t* inPos = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
+        const uint8_t* inNormal = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
+        TransformVertices( inPos, inNormal, posStream, normalStream, s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexSize, roundedUpVerticesCount );
     }
 
     const uint8_t* sourceTexcoordStream = s_StreamSourceTex.m_Data + s_StreamSourceTex.m_Offset + s_StreamSourceTex.m_Stride * baseVertexLocation;
