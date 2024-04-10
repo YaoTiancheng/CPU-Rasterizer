@@ -694,7 +694,7 @@ static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, con
 
 static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor, ELightType lightType )
 {
-    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x10 : 0 ) | ( lightType << 2 );
+    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x2 : 0 ) | ( lightType << 2 );
 }
 
 static uint32_t MakePipelineStateIndex( const SPipelineState& state )
@@ -714,7 +714,13 @@ SPipelineFunctionPointers GetPipelineFunctionPointers()
 
 void Rasterizer::Initialize()
 {
-#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor, lightType ) s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( useTexture, useVertexColor, lightType ) ] = GetPipelineFunctionPointers< useTexture, useVertexColor, lightType >();
+#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor, lightType ) \
+    { \
+        uint32_t pipelineStateIndex = MakePipelineStateIndex( useTexture, useVertexColor, lightType ); \
+        assert( pipelineStateIndex < MAX_PIPELINE_STATE_COUNT ); \
+        s_PipelineFunctionPtrsTable[ pipelineStateIndex ] = GetPipelineFunctionPointers< useTexture, useVertexColor, lightType >(); \
+    }
+
     SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::eInvalid )
     SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::eInvalid )
     SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::eInvalid )
