@@ -531,67 +531,34 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     float bb12 = b12 * rcpDoubleSignedArea;
     float bb20 = b20 * rcpDoubleSignedArea;
 
-    float z_row = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, bw0_row, bw1_row, bw2_row ); // Z at the minimum of the bounding box
-    float z_a = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, ba12, ba20, ba01 ); // Horizontal Z increment
-    float z_b = BarycentricInterplation( v0.m_Z, v1.m_Z, v2.m_Z, bb12, bb20, bb01 ); // Vertical Z increment
+#define SETUP_ATTRIBUTE( name, a0, a1, a2, condition ) \
+    float name##_row, name##_a, name##_b; \
+    if ( condition ) \
+    { \
+        name##_row = BarycentricInterplation( a0, a1, a2, bw0_row, bw1_row, bw2_row ); \
+        name##_a = BarycentricInterplation( a0, a1, a2, ba12, ba20, ba01 ); \
+        name##_b = BarycentricInterplation( a0, a1, a2, bb12, bb20, bb01 ); \
+    }
+
+    constexpr bool NeedLighting = LightType != ELightType::eInvalid;
+    constexpr bool NeedRcpw = UseTexture || UseVertexColor || NeedLighting;
+
+    SETUP_ATTRIBUTE( z, v0.m_Z, v1.m_Z, v2.m_Z, true )
     
-    constexpr bool NeedRcpw = UseTexture || UseVertexColor || LightType != ELightType::eInvalid;
-    float rcpw_row, rcpw_a, rcpw_b;
-    if ( NeedRcpw )
-    { 
-        rcpw_row = BarycentricInterplation( v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, bw0_row, bw1_row, bw2_row ); // rcpw at the minimum of the bounding box
-        rcpw_a = BarycentricInterplation( v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, ba12, ba20, ba01 ); // Horizontal rcpw increment
-        rcpw_b = BarycentricInterplation( v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, bb12, bb20, bb01 ); // Vertical rcpw increment
-    }
+    SETUP_ATTRIBUTE( rcpw, v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, NeedRcpw )
 
-    float texU_row, texU_a, texU_b;
-    float texV_row, texV_a, texV_b;
-    if ( UseTexture )
-    { 
-        texU_row = BarycentricInterplation( v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, bw0_row, bw1_row, bw2_row ); // texU at the minimum of the bounding box
-        texU_a = BarycentricInterplation( v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, ba12, ba20, ba01 ); // Horizontal texU increment
-        texU_b = BarycentricInterplation( v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, bb12, bb20, bb01 ); // Vertical texU increment
+    SETUP_ATTRIBUTE( texU, v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, UseTexture )
+    SETUP_ATTRIBUTE( texV, v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, UseTexture )
 
-        texV_row = BarycentricInterplation( v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, bw0_row, bw1_row, bw2_row ); // texV at the minimum of the bounding box
-        texV_a = BarycentricInterplation( v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, ba12, ba20, ba01 ); // Horizontal texV increment
-        texV_b = BarycentricInterplation( v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, bb12, bb20, bb01 ); // Vertical texV increment
-    }
+    SETUP_ATTRIBUTE( colorR, v0.m_ColorR, v1.m_ColorR, v2.m_ColorR, UseVertexColor )
+    SETUP_ATTRIBUTE( colorG, v0.m_ColorG, v1.m_ColorG, v2.m_ColorG, UseVertexColor )
+    SETUP_ATTRIBUTE( colorB, v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, UseVertexColor )
 
-    float colorR_row, colorR_a, colorR_b;
-    float colorG_row, colorG_a, colorG_b;
-    float colorB_row, colorB_a, colorB_b;
-    if ( UseVertexColor )
-    {
-        colorR_row = BarycentricInterplation( v0.m_ColorR, v1.m_ColorR, v2.m_ColorR, bw0_row, bw1_row, bw2_row ); // colorR at the minimum of the bounding box
-        colorR_a = BarycentricInterplation( v0.m_ColorR, v1.m_ColorR, v2.m_ColorR, ba12, ba20, ba01 ); // Horizontal colorR increment
-        colorR_b = BarycentricInterplation( v0.m_ColorR, v1.m_ColorR, v2.m_ColorR, bb12, bb20, bb01 ); // Vertical colorR increment
+    SETUP_ATTRIBUTE( normalX, v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, NeedLighting )
+    SETUP_ATTRIBUTE( normalY, v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, NeedLighting )
+    SETUP_ATTRIBUTE( normalZ, v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, NeedLighting )
 
-        colorG_row = BarycentricInterplation( v0.m_ColorG, v1.m_ColorG, v2.m_ColorG, bw0_row, bw1_row, bw2_row ); // colorG at the minimum of the bounding box
-        colorG_a = BarycentricInterplation( v0.m_ColorG, v1.m_ColorG, v2.m_ColorG, ba12, ba20, ba01 ); // Horizontal colorG increment
-        colorG_b = BarycentricInterplation( v0.m_ColorG, v1.m_ColorG, v2.m_ColorG, bb12, bb20, bb01 ); // Vertical colorG increment
-
-        colorB_row = BarycentricInterplation( v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, bw0_row, bw1_row, bw2_row ); // colorB at the minimum of the bounding box
-        colorB_a = BarycentricInterplation( v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, ba12, ba20, ba01 ); // Horizontal colorB increment
-        colorB_b = BarycentricInterplation( v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, bb12, bb20, bb01 ); // Vertical colorB increment
-    }
-
-    float normalX_row, normalX_a, normalX_b;
-    float normalY_row, normalY_a, normalY_b;
-    float normalZ_row, normalZ_a, normalZ_b;
-    if ( LightType != ELightType::eInvalid )
-    {
-        normalX_row = BarycentricInterplation( v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, bw0_row, bw1_row, bw2_row ); // normalX at the minimum of the bounding box
-        normalX_a = BarycentricInterplation( v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, ba12, ba20, ba01 ); // Horizontal normalX increment
-        normalX_b = BarycentricInterplation( v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, bb12, bb20, bb01 ); // Vertical normalX increment
-
-        normalY_row = BarycentricInterplation( v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, bw0_row, bw1_row, bw2_row ); // normalY at the minimum of the bounding box
-        normalY_a = BarycentricInterplation( v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, ba12, ba20, ba01 ); // Horizontal normalY increment
-        normalY_b = BarycentricInterplation( v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, bb12, bb20, bb01 ); // Vertical normalY increment
-
-        normalZ_row = BarycentricInterplation( v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, bw0_row, bw1_row, bw2_row ); // normalZ at the minimum of the bounding box
-        normalZ_a = BarycentricInterplation( v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, ba12, ba20, ba01 ); // Horizontal normalZ increment
-        normalZ_b = BarycentricInterplation( v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, bb12, bb20, bb01 ); // Vertical normalZ increment
-    }
+#undef SETUP_ATTRIBUTE
 
     // Apply top left rule
     const int32_t topLeftBias0 = IsTopLeftEdge( v1, v2 ) ? 0 : -1;
@@ -610,36 +577,29 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
 
         int32_t imgX = imgMinX;
 
-        float z = z_row;
-
-        float rcpw = 0.f;
-        if ( NeedRcpw )
-        {
-            rcpw = rcpw_row;
+#define ROW_INIT_ATTRIBUTE( name, condition ) \
+        float name; \
+        if ( condition ) \
+        { \
+            name = name##_row; \
         }
 
-        float texU, texV;
-        if ( UseTexture )
-        { 
-            texU = texU_row;
-            texV = texV_row;
-        }
+        ROW_INIT_ATTRIBUTE( z, true )
+        
+        ROW_INIT_ATTRIBUTE( rcpw, NeedRcpw )
 
-        float colorR, colorG, colorB;
-        if ( UseVertexColor )
-        {
-            colorR = colorR_row;
-            colorG = colorG_row;
-            colorB = colorB_row;
-        }
+        ROW_INIT_ATTRIBUTE( texU, UseTexture )
+        ROW_INIT_ATTRIBUTE( texV, UseTexture )
 
-        float normalX, normalY, normalZ;
-        if ( LightType != ELightType::eInvalid )
-        {
-            normalX = normalX_row;
-            normalY = normalY_row;
-            normalZ = normalZ_row;
-        }
+        ROW_INIT_ATTRIBUTE( colorR, UseVertexColor )
+        ROW_INIT_ATTRIBUTE( colorG, UseVertexColor )
+        ROW_INIT_ATTRIBUTE( colorB, UseVertexColor )
+
+        ROW_INIT_ATTRIBUTE( normalX, NeedLighting )
+        ROW_INIT_ATTRIBUTE( normalY, NeedLighting )
+        ROW_INIT_ATTRIBUTE( normalZ, NeedLighting )
+
+#undef ROW_INIT_ATTRIBUTE
 
         for ( pX = minX; pX <= maxX; pX += s_SubpixelStep, imgX += 1 )
         {
@@ -712,64 +672,56 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
             w1 += a20;
             w2 += a01;
 
-            z += z_a;
-
-            if ( NeedRcpw )
-            { 
-                rcpw += rcpw_a;
+#define ROW_INC_ATTRIBUTE( name, condition ) \
+            if ( condition ) \
+            { \
+                name += name##_a; \
             }
 
-            if ( UseTexture )
-            { 
-                texU += texU_a;
-                texV += texV_a;
-            }
+            ROW_INC_ATTRIBUTE( z, true )
 
-            if ( UseVertexColor )
-            {
-                colorR += colorR_a;
-                colorG += colorG_a;
-                colorB += colorB_a;
-            }
+            ROW_INC_ATTRIBUTE( rcpw, NeedRcpw )
 
-            if ( LightType != ELightType::eInvalid )
-            {
-                normalX += normalX_a;
-                normalY += normalY_a;
-                normalZ += normalZ_a;
-            }
+            ROW_INC_ATTRIBUTE( texU, UseTexture )
+            ROW_INC_ATTRIBUTE( texV, UseTexture )
+
+            ROW_INC_ATTRIBUTE( colorR, UseVertexColor )
+            ROW_INC_ATTRIBUTE( colorG, UseVertexColor )
+            ROW_INC_ATTRIBUTE( colorB, UseVertexColor )
+
+            ROW_INC_ATTRIBUTE( normalX, NeedLighting )
+            ROW_INC_ATTRIBUTE( normalY, NeedLighting )
+            ROW_INC_ATTRIBUTE( normalZ, NeedLighting )
+
+#undef ROW_INC_ATTRIBUTE
         }
 
         w0_row += b12;
         w1_row += b20;
         w2_row += b01;
 
-        z_row += z_b;
-
-        if ( NeedRcpw )
-        { 
-            rcpw_row += rcpw_b;
+#define VERTICAL_INC_ATTRIBUTE( name, condition ) \
+        if ( condition ) \
+        { \
+            name##_row += name##_b; \
         }
 
-        if ( UseTexture )
-        { 
-            texU_row += texU_b;
-            texV_row += texV_b;
-        }
+        VERTICAL_INC_ATTRIBUTE( z, true )
 
-        if ( UseVertexColor )
-        {
-            colorR_row += colorR_b;
-            colorG_row += colorG_b;
-            colorB_row += colorB_b;
-        }
+        VERTICAL_INC_ATTRIBUTE( rcpw, NeedRcpw )
 
-        if ( LightType != ELightType::eInvalid )
-        {
-            normalX_row += normalX_b;
-            normalY_row += normalY_b;
-            normalZ_row += normalZ_b;
-        }
+        VERTICAL_INC_ATTRIBUTE( texU, UseTexture )
+        VERTICAL_INC_ATTRIBUTE( texV, UseTexture )
+
+        VERTICAL_INC_ATTRIBUTE( colorR, UseVertexColor )
+        VERTICAL_INC_ATTRIBUTE( colorG, UseVertexColor )
+        VERTICAL_INC_ATTRIBUTE( colorB, UseVertexColor )
+
+        VERTICAL_INC_ATTRIBUTE( normalX, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( normalY, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( normalZ, NeedLighting )
+
+#undef VERTICAL_INC_ATTRIBUTE
     }
 }
 
