@@ -65,6 +65,18 @@ struct SRasterizerVertex
     float m_NormalZ;
 };
 
+struct SVertexTransformArgs
+{
+    const uint8_t* m_InPos;
+    const uint8_t* m_InNormal;
+    uint8_t* m_OutPos;
+    uint8_t* m_OutNormal;
+    uint32_t m_PosStride;
+    uint32_t m_NormalStride;
+    uint32_t m_OutStride;
+    uint32_t m_Count;
+};
+
 typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
 typedef void (*RasterizeFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
 
@@ -259,21 +271,38 @@ static inline void __vectorcall ScatterInt4( __m128i value, uint8_t* stream, uin
     *(int32_t*)( stream + stride + stride + stride ) = int4.m_Data[ 3 ];
 }
 
-static void __vectorcall TransformPos3Stream( __m128 m00, __m128 m01, __m128 m02, __m128 m03,
-    __m128 m10, __m128 m11, __m128 m12, __m128 m13,
-    __m128 m20, __m128 m21, __m128 m22, __m128 m23,
-    __m128 m30, __m128 m31, __m128 m32, __m128 m33,
-    const uint8_t* inPos, uint32_t inStride, uint32_t count,
-    uint8_t* outPos, uint32_t outStride )
+static void TransformVertices( const SVertexTransformArgs& args )
 {
-    assert( count % SIMD_WIDTH == 0 );
+    assert( args.m_Count % SIMD_WIDTH == 0 );
+    const uint32_t batchCount = args.m_Count / SIMD_WIDTH;
 
-    uint32_t batchCount = count / SIMD_WIDTH;
+    __m128 m00 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 0 ] );
+    __m128 m01 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 1 ] );
+    __m128 m02 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 2 ] );
+    __m128 m03 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 3 ] );
+    __m128 m10 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 4 ] );
+    __m128 m11 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 5 ] );
+    __m128 m12 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 6 ] );
+    __m128 m13 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 7 ] );
+    __m128 m20 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 8 ] );
+    __m128 m21 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 9 ] );
+    __m128 m22 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 10 ] );
+    __m128 m23 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 11 ] );
+    __m128 m30 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 12 ] );
+    __m128 m31 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 13 ] );
+    __m128 m32 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 14 ] );
+    __m128 m33 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 15 ] );
+
+    const uint32_t outStride = args.m_OutStride;
+
+    const uint8_t* inPos = args.m_InPos;
+    uint8_t* outPos = args.m_OutPos;
+    const uint32_t posStride = args.m_PosStride;
     for ( uint32_t i = 0; i < batchCount; ++i )
     {
-        __m128 x = GatherFloat4( inPos, inStride );
-        __m128 y = GatherFloat4( sizeof( float ) + inPos, inStride );
-        __m128 z = GatherFloat4( sizeof( float ) * 2 + inPos, inStride );
+        __m128 x = GatherFloat4( inPos, posStride );
+        __m128 y = GatherFloat4( sizeof( float ) + inPos, posStride );
+        __m128 z = GatherFloat4( sizeof( float ) * 2 + inPos, posStride );
         __m128 dotX, dotY, dotZ, dotW;
         SIMDMath::Vec3DotVec4( x, y, z, m00, m10, m20, m30, dotX );
         SIMDMath::Vec3DotVec4( x, y, z, m01, m11, m21, m31, dotY );
@@ -284,35 +313,41 @@ static void __vectorcall TransformPos3Stream( __m128 m00, __m128 m01, __m128 m02
         ScatterFloat4( dotZ, sizeof( float ) * 2 + outPos, outStride );
         ScatterFloat4( dotW, sizeof( float ) * 3 + outPos, outStride );
 
-        inPos += SIMD_WIDTH * inStride;
+        inPos += SIMD_WIDTH * posStride;
         outPos += SIMD_WIDTH * outStride;
     }
-}
 
-static void __vectorcall AffineTransformVec3Stream( __m128 m00, __m128 m01, __m128 m02,
-    __m128 m10, __m128 m11, __m128 m12,
-    __m128 m20, __m128 m21, __m128 m22,
-    const uint8_t* inVec, uint32_t inStride, uint32_t count,
-    uint8_t* outVec, uint32_t outStride )
-{
-    assert( count % SIMD_WIDTH == 0 );
+    if ( s_PipelineState.m_LightType != ELightType::eInvalid )
+    { 
+        m00 = _mm_set1_ps( s_NormalMatrix.m_Data[ 0 ] );
+        m01 = _mm_set1_ps( s_NormalMatrix.m_Data[ 1 ] );
+        m02 = _mm_set1_ps( s_NormalMatrix.m_Data[ 2 ] );
+        m10 = _mm_set1_ps( s_NormalMatrix.m_Data[ 4 ] );
+        m11 = _mm_set1_ps( s_NormalMatrix.m_Data[ 5 ] );
+        m12 = _mm_set1_ps( s_NormalMatrix.m_Data[ 6 ] );
+        m20 = _mm_set1_ps( s_NormalMatrix.m_Data[ 8 ] );
+        m21 = _mm_set1_ps( s_NormalMatrix.m_Data[ 9 ] );
+        m22 = _mm_set1_ps( s_NormalMatrix.m_Data[ 10 ] );
 
-    uint32_t batchCount = count / SIMD_WIDTH;
-    for ( uint32_t i = 0; i < batchCount; ++i )
-    {
-        __m128 x = GatherFloat4( inVec, inStride );
-        __m128 y = GatherFloat4( sizeof( float ) + inVec, inStride );
-        __m128 z = GatherFloat4( sizeof( float ) * 2 + inVec, inStride );
-        __m128 dotX, dotY, dotZ;
-        SIMDMath::Vec3DotVec3( x, y, z, m00, m10, m20, dotX );
-        SIMDMath::Vec3DotVec3( x, y, z, m01, m11, m21, dotY );
-        SIMDMath::Vec3DotVec3( x, y, z, m02, m12, m22, dotZ );
-        ScatterFloat4( dotX, outVec, outStride );
-        ScatterFloat4( dotY, sizeof( float ) + outVec, outStride );
-        ScatterFloat4( dotZ, sizeof( float ) * 2 + outVec, outStride );
+        const uint8_t* inNormal = args.m_InNormal;
+        uint8_t* outNormal = args.m_OutNormal;
+        const uint32_t normalStride = args.m_NormalStride;
+        for ( uint32_t i = 0; i < batchCount; ++i )
+        {
+            __m128 x = GatherFloat4( inNormal, normalStride );
+            __m128 y = GatherFloat4( sizeof( float ) + inNormal, normalStride );
+            __m128 z = GatherFloat4( sizeof( float ) * 2 + inNormal, normalStride );
+            __m128 dotX, dotY, dotZ;
+            SIMDMath::Vec3DotVec3( x, y, z, m00, m10, m20, dotX );
+            SIMDMath::Vec3DotVec3( x, y, z, m01, m11, m21, dotY );
+            SIMDMath::Vec3DotVec3( x, y, z, m02, m12, m22, dotZ );
+            ScatterFloat4( dotX, outNormal, outStride );
+            ScatterFloat4( dotY, sizeof( float ) + outNormal, outStride );
+            ScatterFloat4( dotZ, sizeof( float ) * 2 + outNormal, outStride );
 
-        inVec += SIMD_WIDTH * inStride;
-        outVec += SIMD_WIDTH * outStride;
+            inNormal += SIMD_WIDTH * normalStride;
+            outNormal += SIMD_WIDTH * outStride;
+        }
     }
 }
 
@@ -974,49 +1009,20 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     uint8_t* vertices = (uint8_t*)malloc( vertexSize * roundedUpVerticesCount );
     
     uint8_t* posStream = vertices;
-
-    // transform vertex positions
-    {
-        __m128 m00 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 0 ] );
-        __m128 m01 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 1 ] );
-        __m128 m02 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 2 ] );
-        __m128 m03 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 3 ] );
-        __m128 m10 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 4 ] );
-        __m128 m11 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 5 ] );
-        __m128 m12 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 6 ] );
-        __m128 m13 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 7 ] );
-        __m128 m20 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 8 ] );
-        __m128 m21 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 9 ] );
-        __m128 m22 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 10 ] );
-        __m128 m23 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 11 ] );
-        __m128 m30 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 12 ] );
-        __m128 m31 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 13 ] );
-        __m128 m32 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 14 ] );
-        __m128 m33 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 15 ] );
-
-        const uint8_t* sourcePosStream = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
-        TransformPos3Stream( m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m23, m30, m31, m32, m33,
-            sourcePosStream, s_StreamSourcePos.m_Stride, roundedUpVerticesCount, posStream, vertexSize );
-    }
-
     uint8_t* normalStream = vertices + normalOffset;
 
-    if ( s_PipelineState.m_LightType != ELightType::eInvalid )
+    // Vertex transform
     {
-        // transform normals
-        __m128 m00 = _mm_set1_ps( s_NormalMatrix.m_Data[ 0 ] );
-        __m128 m01 = _mm_set1_ps( s_NormalMatrix.m_Data[ 1 ] );
-        __m128 m02 = _mm_set1_ps( s_NormalMatrix.m_Data[ 2 ] );
-        __m128 m10 = _mm_set1_ps( s_NormalMatrix.m_Data[ 4 ] );
-        __m128 m11 = _mm_set1_ps( s_NormalMatrix.m_Data[ 5 ] );
-        __m128 m12 = _mm_set1_ps( s_NormalMatrix.m_Data[ 6 ] );
-        __m128 m20 = _mm_set1_ps( s_NormalMatrix.m_Data[ 8 ] );
-        __m128 m21 = _mm_set1_ps( s_NormalMatrix.m_Data[ 9 ] );
-        __m128 m22 = _mm_set1_ps( s_NormalMatrix.m_Data[ 10 ] );
-
-        const uint8_t* sourceNormalStream = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
-        AffineTransformVec3Stream( m00, m01, m02, m10, m11, m12, m20, m21, m22, 
-            sourceNormalStream, s_StreamSourceNormal.m_Stride, roundedUpVerticesCount, normalStream, vertexSize );
+        SVertexTransformArgs args;
+        args.m_InPos = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
+        args.m_InNormal = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
+        args.m_OutPos = posStream;
+        args.m_OutNormal = normalStream;
+        args.m_PosStride = s_StreamSourcePos.m_Stride;
+        args.m_NormalStride = s_StreamSourceNormal.m_Stride;
+        args.m_OutStride = vertexSize;
+        args.m_Count = roundedUpVerticesCount;
+        TransformVertices( args );
     }
 
     const uint8_t* sourceTexcoordStream = s_StreamSourceTex.m_Data + s_StreamSourceTex.m_Offset + s_StreamSourceTex.m_Stride * baseVertexLocation;
