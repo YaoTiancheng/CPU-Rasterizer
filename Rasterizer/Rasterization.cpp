@@ -80,7 +80,7 @@ static SPipelineFunctionPointers s_PipelineFunctionPtrsTable[ MAX_PIPELINE_STATE
 static SPipelineState s_PipelineState;
 static SPipelineFunctionPointers s_PipelineFunctionPtrs;
 
-static SMatrix s_WorldMatrix =
+static SMatrix s_WorldViewMatrix =
     {
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
@@ -88,13 +88,6 @@ static SMatrix s_WorldMatrix =
         0.f, 0.f, 0.f, 1.f,
     };
 static SMatrix s_NormalMatrix =
-    {
-        1.f, 0.f, 0.f, 0.f,
-        0.f, 1.f, 0.f, 0.f,
-        0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 0.f, 1.f,
-    };
-static SMatrix s_ViewMatrix =
     {
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
@@ -221,12 +214,12 @@ static SMatrix MatrixMultiply4x4( const SMatrix& lhs, const SMatrix& rhs )
 static void UpdateNormalMatrix()
 {
     // TODO: This is incorrect if world matrix contains non-uniform scaling
-    s_NormalMatrix = s_WorldMatrix;
+    s_NormalMatrix = s_WorldViewMatrix;
 }
 
 static void UpdateWorldViewProjectionMatrix()
 {
-    s_WorldViewProjectionMatrix = MatrixMultiply4x4( MatrixMultiply4x3( s_WorldMatrix, s_ViewMatrix ), s_ProjectionMatrix );
+    s_WorldViewProjectionMatrix = MatrixMultiply4x4( s_WorldViewMatrix, s_ProjectionMatrix );
 }
 
 static inline __m128 __vectorcall GatherFloat4( const uint8_t* stream, uint32_t stride )
@@ -849,16 +842,10 @@ void Rasterizer::SetIndexStream( const uint32_t* indices )
     s_StreamSourceIndex = indices;
 }
 
-void Rasterizer::SetWorldTransform( const SMatrix& matrix )
+void Rasterizer::SetWorldViewTransform( const SMatrix& matrix )
 {
-    s_WorldMatrix = matrix;
+    s_WorldViewMatrix = matrix;
     UpdateNormalMatrix();
-    UpdateWorldViewProjectionMatrix();
-}
-
-void Rasterizer::SetViewTransform( const SMatrix& matrix )
-{
-    s_ViewMatrix = matrix;
     UpdateWorldViewProjectionMatrix();
 }
 

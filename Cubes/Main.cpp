@@ -207,20 +207,17 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     XMFLOAT4 baseColor[] = { { 1.f, 1.f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
 
-    Rasterizer::SMatrix matrix = 
-    {
+    Rasterizer::SMatrix matrix;
+    XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
+    XMMATRIX viewMatrix = XMMatrixSet(
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 10.f, 1.f 
-    };
-    Rasterizer::SetViewTransform( matrix );
-
+        0.f, 0.f, 10.f, 1.f );
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 2.f, 1000.f );
+
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
-    
-    XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
 
     XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
@@ -237,8 +234,9 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
                 XMFLOAT3 center( cubeCenterMin.x + cubeSpacing.x * x, cubeCenterMin.y + cubeSpacing.y * y, cubeCenterMin.z + cubeSpacing.z * z );
                 XMMATRIX translationMatrix = XMMatrixTranslation( center.x, center.y, center.z );
                 XMMATRIX worldMatrix = XMMatrixMultiply( translationMatrix, rotationMatrix );
-                XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldMatrix );
-                Rasterizer::SetWorldTransform( matrix );
+                XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
+                XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
+                Rasterizer::SetWorldViewTransform( matrix );
 
                 Rasterizer::DrawIndexed( 0, 0, triangleCount );
             }

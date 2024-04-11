@@ -117,19 +117,26 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
     XMMATRIX worldMatrix = XMMatrixMultiply( XMMatrixTranslation( 0.f, -1.2f, 0.f ), rotationMatrix );
-    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldMatrix );
-    Rasterizer::SetWorldTransform( matrix );
-
-    matrix = Rasterizer::SMatrix(
+    XMMATRIX viewMatrix = XMMatrixSet(
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 7.5f, 1.f );
-    Rasterizer::SetViewTransform( matrix );
+    XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
+    
+    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
+    Rasterizer::SetWorldViewTransform( matrix );
 
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 50.0f ), aspectRatio, 2.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
+
+    XMFLOAT3A vector( 1.f, 1.f, 1.f );
+    Rasterizer::SetLightColor( (float*)&vector );
+    // Transform the light from world space to view space
+    XMVECTOR lightDirection = XMVector3TransformNormal( XMVectorSet( 0.f, 1.f, 0.f, 0.f ), viewMatrix );
+    XMStoreFloat3A( &vector, lightDirection );
+    Rasterizer::SetLightPosition( (float*)&vector );
 
     Rasterizer::DrawIndexed( 0, 0, triangleCount );         
 }
@@ -201,11 +208,6 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetViewport( viewport );
     Rasterizer::SPipelineState pipelineState( false, false, Rasterizer::ELightType::eDirectional );
     Rasterizer::SetPipelineState( pipelineState );
-
-    XMFLOAT4 lightColor( 1.f, 1.f, 1.f, 1.f );
-    XMFLOAT4 lightDirection( 0.f, 1.f, 0.f, 0.f );
-    Rasterizer::SetLightColor( (float*)&lightColor );
-    Rasterizer::SetLightPosition( (float*)&lightDirection );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 

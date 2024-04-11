@@ -105,9 +105,7 @@ namespace Rasterizer
 
     void SetIndexStream( const uint32_t* indices );
 
-    void SetWorldTransform( const SMatrix& matrix );
-
-    void SetViewTransform( const SMatrix& matrix );
+    void SetWorldViewTransform( const SMatrix& matrix );
 
     void SetProjectionTransform( const SMatrix& matrix );
 
