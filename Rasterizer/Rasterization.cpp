@@ -50,26 +50,29 @@ struct SRasterizerVertex
         m_NormalY = ( (float*)data )[ 1 ];
         m_NormalZ = ( (float*)data )[ 2 ];
     }
+    void SetViewPos( const uint8_t* data ) 
+    { 
+        m_ViewPosX = ( (float*)data )[ 0 ];
+        m_ViewPosY = ( (float*)data )[ 1 ];
+        m_ViewPosZ = ( (float*)data )[ 2 ];
+    }
 
-    int32_t m_X;
-    int32_t m_Y;
+    int32_t m_X, m_Y;
     float m_Z;
     float m_Rcpw;
-    float m_TexcoordU;
-    float m_TexcoordV;
-    float m_ColorR;
-    float m_ColorG;
-    float m_ColorB;
-    float m_NormalX;
-    float m_NormalY;
-    float m_NormalZ;
+    float m_TexcoordU, m_TexcoordV;
+    float m_ColorR, m_ColorG, m_ColorB;
+    float m_NormalX, m_NormalY, m_NormalZ;
+    float m_ViewPosX, m_ViewPosY, m_ViewPosZ;
 };
 
-typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
-typedef void (*RasterizeFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
+typedef void (*VertexTransformFunctionPtr)( const uint8_t*, const uint8_t*, uint8_t*, uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
+typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( uint8_t*, uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
+typedef void (*RasterizeFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
 
 struct SPipelineFunctionPointers
 {
+    VertexTransformFunctionPtr m_VertexTransformFunction;
     TransformVerticesToRasterizerCoordinatesFunctionPtr m_TransformVerticesToRasterizerCoordinatesFunction;
     RasterizeFunctionPtr m_RasterizerFunction;
     RasterizeFunctionPtr m_RasterizerFunctionIndexed;
@@ -252,11 +255,13 @@ static inline void __vectorcall ScatterInt4( __m128i value, uint8_t* stream, uin
     *(int32_t*)( stream + stride + stride + stride ) = int4.m_Data[ 3 ];
 }
 
+template <bool NeedLighting>
 static void TransformVertices( 
     const uint8_t* inPos,
     const uint8_t* inNormal,
     uint8_t* outPos,
     uint8_t* outNormal,
+    uint8_t* outViewPos,
     uint32_t posStride,
     uint32_t normalStride,
     uint32_t outStride,
@@ -283,12 +288,31 @@ static void TransformVertices(
     __m128 m32 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 14 ] );
     __m128 m33 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 15 ] );
 
+    __m128 n00, n01, n02, n10, n11, n12, n20, n21, n22, n30, n31, n32;
+    if ( NeedLighting )
+    {
+        n00 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 0 ] );
+        n01 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 1 ] );
+        n02 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 2 ] );
+        n10 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 4 ] );
+        n11 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 5 ] );
+        n12 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 6 ] );
+        n20 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 8 ] );
+        n21 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 9 ] );
+        n22 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 10 ] );
+        n30 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 12 ] );
+        n31 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 13 ] );
+        n32 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 14 ] );
+    }
+
     for ( uint32_t i = 0; i < batchCount; ++i )
     {
         __m128 x = GatherFloat4( inPos, posStride );
         __m128 y = GatherFloat4( sizeof( float ) + inPos, posStride );
         __m128 z = GatherFloat4( sizeof( float ) * 2 + inPos, posStride );
         __m128 dotX, dotY, dotZ, dotW;
+
+        // Clip space position
         SIMDMath::Vec3DotVec4( x, y, z, m00, m10, m20, m30, dotX );
         SIMDMath::Vec3DotVec4( x, y, z, m01, m11, m21, m31, dotY );
         SIMDMath::Vec3DotVec4( x, y, z, m02, m12, m22, m32, dotZ );
@@ -300,9 +324,22 @@ static void TransformVertices(
 
         inPos += SIMD_WIDTH * posStride;
         outPos += SIMD_WIDTH * outStride;
+
+        if ( NeedLighting )
+        { 
+            // Get view space position
+            SIMDMath::Vec3DotVec4( x, y, z, n00, n10, n20, n30, dotX );
+            SIMDMath::Vec3DotVec4( x, y, z, n01, n11, n21, n31, dotY );
+            SIMDMath::Vec3DotVec4( x, y, z, n02, n12, n22, n32, dotZ );
+            ScatterFloat4( dotX, outViewPos, outStride );
+            ScatterFloat4( dotY, sizeof(float) + outViewPos, outStride );
+            ScatterFloat4( dotZ, sizeof(float) * 2 + outViewPos, outStride );
+
+            outViewPos += SIMD_WIDTH * outStride;
+        }
     }
 
-    if ( s_PipelineState.m_LightType != ELightType::eInvalid )
+    if ( NeedLighting )
     { 
         m00 = _mm_set1_ps( s_NormalMatrix.m_Data[ 0 ] );
         m01 = _mm_set1_ps( s_NormalMatrix.m_Data[ 1 ] );
@@ -333,8 +370,8 @@ static void TransformVertices(
     }
 }
 
-template <bool UseTexture, bool UseVertexColor, bool UseNormal>
-static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* normal,
+template <bool UseTexture, bool UseVertexColor, bool UseNormal, bool UseViewPos>
+static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* normal, uint8_t* viewPos,
     const uint8_t* inTex, uint8_t* outTex,
     const uint8_t* inColor, uint8_t* outColor,
     uint32_t stride, uint32_t texStride, uint32_t colorStride,
@@ -383,6 +420,13 @@ static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* nor
             normalY = GatherFloat4( sizeof( float ) + normal, stride );
             normalZ = GatherFloat4( sizeof( float ) * 2 + normal, stride );
         }
+        __m128 viewPosX, viewPosY, viewPosZ;
+        if ( UseViewPos )
+        {
+            viewPosX = GatherFloat4( viewPos, stride );
+            viewPosY = GatherFloat4( sizeof( float ) + viewPos, stride );
+            viewPosZ = GatherFloat4( sizeof( float ) * 2 + viewPos, stride );
+        }
 
         x = _mm_fmadd_ps( x, rcpw, one ); // x = x / w - (-1)
         x = _mm_fmadd_ps( x, vHalfRasterizerWidth, half ); // Add 0.5 for rounding
@@ -416,6 +460,13 @@ static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* nor
             normalZ = _mm_mul_ps( normalZ, rcpw );
         }
 
+        if ( UseViewPos )
+        {
+            viewPosX = _mm_mul_ps( viewPosX, rcpw );
+            viewPosY = _mm_mul_ps( viewPosY, rcpw );
+            viewPosZ = _mm_mul_ps( viewPosZ, rcpw );
+        }
+
         ScatterInt4( xi, pos, stride );
         ScatterInt4( yi, sizeof( int32_t ) + pos, stride );
         ScatterFloat4( z, sizeof( int32_t ) * 2 + pos, stride );
@@ -446,6 +497,13 @@ static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* nor
             ScatterFloat4( normalZ, sizeof( float ) * 2 + normal, stride );
         }
 
+        if ( UseViewPos )
+        {
+            ScatterFloat4( viewPosX, viewPos, stride );
+            ScatterFloat4( viewPosY, sizeof( float ) + viewPos, stride );
+            ScatterFloat4( viewPosZ, sizeof( float ) * 2 + viewPos, stride );
+        }
+
         pos += SIMD_WIDTH * stride;
 
         if ( UseTexture )
@@ -463,6 +521,11 @@ static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* nor
         if ( UseNormal )
         {
             normal += SIMD_WIDTH * stride;
+        }
+
+        if ( UseViewPos )
+        {
+            viewPos += SIMD_WIDTH * stride;
         }
     }
 }
@@ -551,6 +614,10 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     SETUP_ATTRIBUTE( normalY, v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, NeedLighting )
     SETUP_ATTRIBUTE( normalZ, v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, NeedLighting )
 
+    SETUP_ATTRIBUTE( viewPosX, v0.m_ViewPosX, v1.m_ViewPosX, v2.m_ViewPosX, NeedLighting )
+    SETUP_ATTRIBUTE( viewPosY, v0.m_ViewPosY, v1.m_ViewPosY, v2.m_ViewPosY, NeedLighting )
+    SETUP_ATTRIBUTE( viewPosZ, v0.m_ViewPosZ, v1.m_ViewPosZ, v2.m_ViewPosZ, NeedLighting )
+
 #undef SETUP_ATTRIBUTE
 
     // Apply top left rule
@@ -592,6 +659,10 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         ROW_INIT_ATTRIBUTE( normalY, NeedLighting )
         ROW_INIT_ATTRIBUTE( normalZ, NeedLighting )
 
+        ROW_INIT_ATTRIBUTE( viewPosX, NeedLighting )
+        ROW_INIT_ATTRIBUTE( viewPosY, NeedLighting )
+        ROW_INIT_ATTRIBUTE( viewPosZ, NeedLighting )
+
 #undef ROW_INIT_ATTRIBUTE
 
         for ( pX = minX; pX <= maxX; pX += s_SubpixelStep, imgX += 1 )
@@ -632,13 +703,13 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     b *= s_BaseColor[ 2 ];
                     a *= s_BaseColor[ 3 ];
 
-                    if ( LightType != ELightType::eInvalid )
+                    if ( NeedLighting )
                     {
                         float vertexNormalX = normalX * w;
                         float vertexNormalY = normalY * w;
                         float vertexNormalZ = normalZ * w;
 
-                        // Re-normalize
+                        // Re-normalize the normal
                         float length = vertexNormalX * vertexNormalX + vertexNormalY * vertexNormalY + vertexNormalZ * vertexNormalZ;
                         float rcpDenorm = 1.0f / sqrtf( length );
                         vertexNormalX *= rcpDenorm;
@@ -648,10 +719,41 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         float NdotL = vertexNormalX * s_LightPosition[ 0 ] + vertexNormalY * s_LightPosition[ 1 ] + vertexNormalZ * s_LightPosition[ 2 ];
                         NdotL = std::max( 0.f, NdotL );
 
-                        r = r * s_LightColor[ 0 ] * NdotL;
-                        g = g * s_LightColor[ 1 ] * NdotL;
-                        b = b * s_LightColor[ 2 ] * NdotL;
+                        float vertexViewPosX = viewPosX * w;
+                        float vertexViewPosY = viewPosY * w;
+                        float vertexViewPosZ = viewPosZ * w;
+                        float vertexViewVecX = -vertexViewPosX;
+                        float vertexViewVecY = -vertexViewPosY;
+                        float vertexViewVecZ = -vertexViewPosZ;
+
+                        // Re-normalize the view vector
+                        length = vertexViewVecX * vertexViewVecX + vertexViewVecY * vertexViewVecY + vertexViewVecZ * vertexViewVecZ;
+                        rcpDenorm = 1.0f / sqrtf( length );
+                        vertexViewVecX *= rcpDenorm;
+                        vertexViewVecY *= rcpDenorm;
+                        vertexViewVecZ *= rcpDenorm;
+
+                        float halfVecX = s_LightPosition[ 0 ] + vertexViewVecX;
+                        float halfVecY = s_LightPosition[ 1 ] + vertexViewVecY;
+                        float halfVecZ = s_LightPosition[ 2 ] + vertexViewVecZ;
+                        // Re-normalize the half vector
+                        length = halfVecX * halfVecX + halfVecY * halfVecY + halfVecZ * halfVecZ;
+                        rcpDenorm = 1.0f / sqrtf( length );
+                        halfVecX *= rcpDenorm;
+                        halfVecY *= rcpDenorm;
+                        halfVecZ *= rcpDenorm;
+
+                        float NdotH = vertexNormalX * halfVecX + vertexNormalY * halfVecY + vertexNormalZ * halfVecZ;
+                        NdotH = std::max( 0.f, NdotH );
+
+                        r = r * s_LightColor[ 0 ] * ( NdotL + std::powf( NdotH, 32.f ) );
+                        g = g * s_LightColor[ 1 ] * ( NdotL + std::powf( NdotH, 32.f ) );
+                        b = b * s_LightColor[ 2 ] * ( NdotL + std::powf( NdotH, 32.f ) );
                     }
+
+                    r = std::fmin( r, 1.f );
+                    g = std::fmin( g, 1.f );
+                    b = std::fmin( b, 1.f );
 
                     uint8_t ri = uint8_t( r * 255.f + 0.5f );
                     uint8_t gi = uint8_t( g * 255.f + 0.5f );
@@ -686,6 +788,10 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
             ROW_INC_ATTRIBUTE( normalY, NeedLighting )
             ROW_INC_ATTRIBUTE( normalZ, NeedLighting )
 
+            ROW_INC_ATTRIBUTE( viewPosX, NeedLighting )
+            ROW_INC_ATTRIBUTE( viewPosY, NeedLighting )
+            ROW_INC_ATTRIBUTE( viewPosZ, NeedLighting )
+
 #undef ROW_INC_ATTRIBUTE
         }
 
@@ -714,14 +820,19 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         VERTICAL_INC_ATTRIBUTE( normalY, NeedLighting )
         VERTICAL_INC_ATTRIBUTE( normalZ, NeedLighting )
 
+        VERTICAL_INC_ATTRIBUTE( viewPosX, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( viewPosY, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( viewPosZ, NeedLighting )
+
 #undef VERTICAL_INC_ATTRIBUTE
     }
 }
 
 template <bool UseTexture, bool UseVertexColor, ELightType LightType, bool IsIndexed>
-static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, const uint8_t* color, const uint8_t* normal, uint32_t stride, const uint32_t* indices, uint32_t trianglesCount )
+static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, const uint8_t* color, const uint8_t* normal, const uint8_t* viewPos, uint32_t stride, const uint32_t* indices, uint32_t trianglesCount )
 {
-    constexpr bool NeedRcpw = UseTexture || UseVertexColor || LightType != ELightType::eInvalid;
+    constexpr bool NeedLighting = LightType != ELightType::eInvalid;
+    constexpr bool NeedRcpw = UseTexture || UseVertexColor || NeedLighting;
 
     const uint8_t* posW = pos + sizeof( int32_t ) * 2 + sizeof( float );
 
@@ -766,11 +877,14 @@ static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, con
             v1.SetColor( color + offset1 );
             v2.SetColor( color + offset2 );
         }
-        if ( LightType != ELightType::eInvalid )
+        if ( NeedLighting )
         {
             v0.SetNormal( normal + offset0 );
             v1.SetNormal( normal + offset1 );
             v2.SetNormal( normal + offset2 );
+            v0.SetViewPos( viewPos + offset0 );
+            v1.SetViewPos( viewPos + offset1 );
+            v2.SetViewPos( viewPos + offset2 );
         }
         RasterizeTriangle<UseTexture, UseVertexColor, LightType>( v0, v1 ,v2 );
     }
@@ -790,8 +904,10 @@ static uint32_t MakePipelineStateIndex( const SPipelineState& state )
 template <bool UseTexture, bool UseVertexColor, ELightType LightType>
 SPipelineFunctionPointers GetPipelineFunctionPointers()
 {
+    constexpr bool NeedLighting = LightType != ELightType::eInvalid;
     SPipelineFunctionPointers ptrs;
-    ptrs.m_TransformVerticesToRasterizerCoordinatesFunction = TransformVerticesToRasterizerCoordinates<UseTexture, UseVertexColor, LightType != ELightType::eInvalid>;
+    ptrs.m_VertexTransformFunction = TransformVertices<NeedLighting>;
+    ptrs.m_TransformVerticesToRasterizerCoordinatesFunction = TransformVerticesToRasterizerCoordinates<UseTexture, UseVertexColor, NeedLighting, NeedLighting>;
     ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, LightType, false>;
     ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, LightType, true>;
     return ptrs;
@@ -901,7 +1017,7 @@ void Rasterizer::SetPipelineState( const SPipelineState& state )
     s_PipelineFunctionPtrs = s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( state ) ];
 }
 
-static uint32_t ComputeVertexLayout( const SPipelineState& pipelineState, uint32_t* texcoordOffset, uint32_t* colorOffset, uint32_t* normalOffset )
+static uint32_t ComputeVertexLayout( const SPipelineState& pipelineState, uint32_t* texcoordOffset, uint32_t* colorOffset, uint32_t* normalOffset, uint32_t* viewPosOffset )
 {
     uint32_t vertexSize = sizeof( float ) * 4;
 
@@ -923,6 +1039,12 @@ static uint32_t ComputeVertexLayout( const SPipelineState& pipelineState, uint32
         vertexSize += sizeof( float ) * 3;
     }
 
+    *viewPosOffset = vertexSize;
+    if ( pipelineState.m_LightType != ELightType::eInvalid )
+    {
+        vertexSize += sizeof( float ) * 3;
+    }
+
     return vertexSize;
 }
 
@@ -932,25 +1054,26 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     const uint32_t roundedUpVerticesCount = MathHelper::DivideAndRoundUp( verticesCount, (uint32_t)SIMD_WIDTH ) * SIMD_WIDTH;
 
     // Compute intermediate vertex layout
-    uint32_t texcoordOffset, colorOffset, normalOffset;
-    const uint32_t vertexSize = ComputeVertexLayout( s_PipelineState, &texcoordOffset, &colorOffset, &normalOffset );
+    uint32_t texcoordOffset, colorOffset, normalOffset, viewPosOffset;
+    const uint32_t vertexSize = ComputeVertexLayout( s_PipelineState, &texcoordOffset, &colorOffset, &normalOffset, &viewPosOffset );
     uint8_t* vertices = (uint8_t*)malloc( vertexSize * roundedUpVerticesCount );
     
     uint8_t* posStream = vertices;
     uint8_t* normalStream = vertices + normalOffset;
+    uint8_t* viewPosStream = vertices + viewPosOffset;
 
     // Vertex transform
     {
         const uint8_t* inPos = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
         const uint8_t* inNormal = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
-        TransformVertices( inPos, inNormal, posStream, normalStream, s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexSize, roundedUpVerticesCount );
+        s_PipelineFunctionPtrs.m_VertexTransformFunction( inPos, inNormal, posStream, normalStream, viewPosStream, s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexSize, roundedUpVerticesCount );
     }
 
     const uint8_t* sourceTexcoordStream = s_StreamSourceTex.m_Data + s_StreamSourceTex.m_Offset + s_StreamSourceTex.m_Stride * baseVertexLocation;
     const uint8_t* sourceColorStream = s_StreamSourceColor.m_Data + s_StreamSourceColor.m_Offset + s_StreamSourceColor.m_Stride * baseVertexLocation;
     uint8_t* texcoordStream = vertices + texcoordOffset;
     uint8_t* colorStream = vertices + colorOffset;
-    s_PipelineFunctionPtrs.m_TransformVerticesToRasterizerCoordinatesFunction( posStream, normalStream,
+    s_PipelineFunctionPtrs.m_TransformVerticesToRasterizerCoordinatesFunction( posStream, normalStream, viewPosStream,
         sourceTexcoordStream, texcoordStream,
         sourceColorStream, colorStream,
         vertexSize, s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride,
@@ -958,11 +1081,11 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
 
     if ( useIndex )
     { 
-        s_PipelineFunctionPtrs.m_RasterizerFunctionIndexed( posStream, texcoordStream, colorStream, normalStream, vertexSize, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
+        s_PipelineFunctionPtrs.m_RasterizerFunctionIndexed( posStream, texcoordStream, colorStream, normalStream, viewPosStream, vertexSize, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
     }
     else
     {
-        s_PipelineFunctionPtrs.m_RasterizerFunction( posStream, texcoordStream, colorStream, normalStream, vertexSize, nullptr, trianglesCount );
+        s_PipelineFunctionPtrs.m_RasterizerFunction( posStream, texcoordStream, colorStream, normalStream, viewPosStream, vertexSize, nullptr, trianglesCount );
     }
 
     free( vertices );
