@@ -30,6 +30,33 @@ namespace Rasterizer
         };
     };
 
+    struct SVector3
+    {
+        SVector3() = default;
+
+        SVector3( float x, float y, float z )
+            : m_X( x ), m_Y( y ), m_Z( z )
+        {}
+
+        union
+        {
+            struct
+            {
+                float m_X, m_Y, m_Z;
+            };
+            float m_Data[ 3 ];
+        };
+    };
+
+    struct SLight
+    {
+        SVector3 m_Position;
+        SVector3 m_Diffuse;
+        SVector3 m_Specular;
+        SVector3 m_Ambient;
+        float m_Power;
+    };
+
     struct SStream
     {
         SStream() 
@@ -117,9 +144,7 @@ namespace Rasterizer
 
     void SetBaseColor( const float* color );
 
-    void SetLightPosition( const float* position );
-
-    void SetLightColor( const float* color );
+    void SetLight( const SLight& light );
 
     void SetTexture( const SImage& image );
 

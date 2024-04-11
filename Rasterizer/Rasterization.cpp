@@ -112,8 +112,7 @@ static SMatrix s_WorldViewProjectionMatrix =
         0.f, 0.f, 0.f, 1.f,
     };
 static float s_BaseColor[ 4 ] = { 1.f, 1.f, 1.f, 1.f };
-static float s_LightPosition[ 4 ] = { 0.f, 0.f, 0.f, 0.f };
-static float s_LightColor[ 4 ] = { 1.f, 1.f, 1.f, 1.f };
+static SLight s_Light;
 
 static SViewport s_Viewport = { 0 };
 static int32_t s_RasterCoordStartX = 0;
@@ -716,7 +715,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         vertexNormalY *= rcpDenorm;
                         vertexNormalZ *= rcpDenorm;
 
-                        float NdotL = vertexNormalX * s_LightPosition[ 0 ] + vertexNormalY * s_LightPosition[ 1 ] + vertexNormalZ * s_LightPosition[ 2 ];
+                        float NdotL = vertexNormalX * s_Light.m_Position.m_X + vertexNormalY * s_Light.m_Position.m_Y + vertexNormalZ * s_Light.m_Position.m_Z;
                         NdotL = std::max( 0.f, NdotL );
 
                         float vertexViewPosX = viewPosX * w;
@@ -733,9 +732,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         vertexViewVecY *= rcpDenorm;
                         vertexViewVecZ *= rcpDenorm;
 
-                        float halfVecX = s_LightPosition[ 0 ] + vertexViewVecX;
-                        float halfVecY = s_LightPosition[ 1 ] + vertexViewVecY;
-                        float halfVecZ = s_LightPosition[ 2 ] + vertexViewVecZ;
+                        float halfVecX = s_Light.m_Position.m_X + vertexViewVecX;
+                        float halfVecY = s_Light.m_Position.m_Y + vertexViewVecY;
+                        float halfVecZ = s_Light.m_Position.m_Z + vertexViewVecZ;
                         // Re-normalize the half vector
                         length = halfVecX * halfVecX + halfVecY * halfVecY + halfVecZ * halfVecZ;
                         rcpDenorm = 1.0f / sqrtf( length );
@@ -746,9 +745,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         float NdotH = vertexNormalX * halfVecX + vertexNormalY * halfVecY + vertexNormalZ * halfVecZ;
                         NdotH = std::max( 0.f, NdotH );
 
-                        r = r * s_LightColor[ 0 ] * ( NdotL + std::powf( NdotH, 32.f ) );
-                        g = g * s_LightColor[ 1 ] * ( NdotL + std::powf( NdotH, 32.f ) );
-                        b = b * s_LightColor[ 2 ] * ( NdotL + std::powf( NdotH, 32.f ) );
+                        r = r * ( s_Light.m_Diffuse.m_X * NdotL + s_Light.m_Specular.m_X * std::powf( NdotH, s_Light.m_Power ) + s_Light.m_Ambient.m_X );
+                        g = g * ( s_Light.m_Diffuse.m_Y * NdotL + s_Light.m_Specular.m_Y * std::powf( NdotH, s_Light.m_Power ) + s_Light.m_Ambient.m_Y );
+                        b = b * ( s_Light.m_Diffuse.m_Z * NdotL + s_Light.m_Specular.m_Z * std::powf( NdotH, s_Light.m_Power ) + s_Light.m_Ambient.m_Z );
                     }
 
                     r = std::fmin( r, 1.f );
@@ -996,14 +995,9 @@ void Rasterizer::SetBaseColor( const float* color )
     memcpy( s_BaseColor, color, sizeof( s_BaseColor ) );
 }
 
-void Rasterizer::SetLightPosition( const float* position )
+void Rasterizer::SetLight( const SLight& light )
 {
-    memcpy( s_LightPosition, position, sizeof( s_LightPosition ) );
-}
-
-void Rasterizer::SetLightColor( const float* color )
-{
-    memcpy( s_LightColor, color, sizeof( s_LightColor ) );
+    s_Light = light;
 }
 
 void Rasterizer::SetTexture( const SImage& image )
