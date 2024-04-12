@@ -67,13 +67,13 @@ struct SRasterizerVertex
 };
 
 typedef void (*VertexTransformFunctionPtr)( const uint8_t*, const uint8_t*, uint8_t*, uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
-typedef void (*TransformVerticesToRasterizerCoordinatesFunctionPtr)( uint8_t*, uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
+typedef void (*PerspectiveDivisionFunctionPtr)( uint8_t*, uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
 typedef void (*RasterizeFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
 
 struct SPipelineFunctionPointers
 {
     VertexTransformFunctionPtr m_VertexTransformFunction;
-    TransformVerticesToRasterizerCoordinatesFunctionPtr m_TransformVerticesToRasterizerCoordinatesFunction;
+    PerspectiveDivisionFunctionPtr m_PerspectiveDivisionFunction;
     RasterizeFunctionPtr m_RasterizerFunction;
     RasterizeFunctionPtr m_RasterizerFunctionIndexed;
 };
@@ -370,7 +370,7 @@ static void TransformVertices(
 }
 
 template <bool UseTexture, bool UseVertexColor, bool UseNormal, bool UseViewPos>
-static void TransformVerticesToRasterizerCoordinates( uint8_t* pos, uint8_t* normal, uint8_t* viewPos,
+static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos,
     const uint8_t* inTex, uint8_t* outTex,
     const uint8_t* inColor, uint8_t* outColor,
     uint32_t stride, uint32_t texStride, uint32_t colorStride,
@@ -906,7 +906,7 @@ SPipelineFunctionPointers GetPipelineFunctionPointers()
     constexpr bool NeedLighting = LightType != ELightType::eInvalid;
     SPipelineFunctionPointers ptrs;
     ptrs.m_VertexTransformFunction = TransformVertices<NeedLighting>;
-    ptrs.m_TransformVerticesToRasterizerCoordinatesFunction = TransformVerticesToRasterizerCoordinates<UseTexture, UseVertexColor, NeedLighting, NeedLighting>;
+    ptrs.m_PerspectiveDivisionFunction = PerspectiveDivision<UseTexture, UseVertexColor, NeedLighting, NeedLighting>;
     ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, LightType, false>;
     ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, LightType, true>;
     return ptrs;
@@ -1072,7 +1072,7 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     const uint8_t* sourceColorStream = s_StreamSourceColor.m_Data + s_StreamSourceColor.m_Offset + s_StreamSourceColor.m_Stride * baseVertexLocation;
     uint8_t* texcoordStream = vertices + texcoordOffset;
     uint8_t* colorStream = vertices + colorOffset;
-    s_PipelineFunctionPtrs.m_TransformVerticesToRasterizerCoordinatesFunction( posStream, normalStream, viewPosStream,
+    s_PipelineFunctionPtrs.m_PerspectiveDivisionFunction( posStream, normalStream, viewPosStream,
         sourceTexcoordStream, texcoordStream,
         sourceColorStream, colorStream,
         vertexSize, s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride,
