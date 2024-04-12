@@ -132,14 +132,19 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     Rasterizer::SetProjectionTransform( matrix );
 
     Rasterizer::SLight light;
-    light.m_Diffuse = Rasterizer::SVector3( 0.5f, 0.6f, 0.5f );
-    light.m_Specular = Rasterizer::SVector3( 0.5f, 0.5f, 0.5f );
+    light.m_Diffuse = Rasterizer::SVector3( 1.f, 1.f, 1.f );
+    light.m_Specular = Rasterizer::SVector3( 1.f, 1.f, 1.f );
     light.m_Ambient = Rasterizer::SVector3( 0.05f, 0.06f, 0.05f );
-    light.m_Power = 45.f;
     // Transform the light from world space to view space
     XMVECTOR lightDirection = XMVector3TransformNormal( XMVectorSet( 0.f, 1.f, 0.f, 0.f ), viewMatrix );
     XMStoreFloat3( (XMFLOAT3*)light.m_Position.m_Data, lightDirection );
     Rasterizer::SetLight( light );
+
+    Rasterizer::SMaterial material;
+    material.m_Diffuse = Rasterizer::SVector4( 0.5f, 0.6f, 0.5f, 1.f );
+    material.m_Specular = Rasterizer::SVector3( 0.5f, 0.5f, 0.5f );
+    material.m_Power = 40.f;
+    Rasterizer::SetMaterial( material );
 
     Rasterizer::DrawIndexed( 0, 0, triangleCount );         
 }

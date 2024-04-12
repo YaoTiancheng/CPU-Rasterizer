@@ -30,6 +30,24 @@ namespace Rasterizer
         };
     };
 
+    struct SVector4
+    {
+        SVector4() = default;
+
+        SVector4( float x, float y, float z, float w )
+            : m_X( x ), m_Y( y ), m_Z( z ), m_W( w )
+        {}
+
+        union
+        {
+            struct
+            {
+                float m_X, m_Y, m_Z, m_W;
+            };
+            float m_Data[ 4 ];
+        };
+    };
+
     struct SVector3
     {
         SVector3() = default;
@@ -54,6 +72,12 @@ namespace Rasterizer
         SVector3 m_Diffuse;
         SVector3 m_Specular;
         SVector3 m_Ambient;
+    };
+
+    struct SMaterial
+    {
+        SVector4 m_Diffuse;
+        SVector3 m_Specular;
         float m_Power;
     };
 
@@ -142,7 +166,9 @@ namespace Rasterizer
 
     void SetDepthTarget( const SImage& image );
 
-    void SetBaseColor( const float* color );
+    void SetMaterialDiffuse( SVector4 color );
+
+    void SetMaterial( const SMaterial& material );
 
     void SetLight( const SLight& light );
 

@@ -205,7 +205,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
         ++depthBit;
     }
 
-    XMFLOAT4 baseColor[] = { { 1.f, 1.f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
+    Rasterizer::SVector4 diffuseColors[] = { { 1.f, 1.f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
 
     Rasterizer::SMatrix matrix;
     XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
@@ -229,7 +229,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
             for ( int32_t x = 0; x < cubeCount.x; ++x )
             {
                 const int32_t index = z * cubeCount.x * cubeCount.y + y * cubeCount.x + x;
-                Rasterizer::SetBaseColor( (float*)&baseColor[ index % 4 ] );
+                Rasterizer::SetMaterialDiffuse( diffuseColors[ index % 4 ] );
 
                 XMFLOAT3 center( cubeCenterMin.x + cubeSpacing.x * x, cubeCenterMin.y + cubeSpacing.y * y, cubeCenterMin.z + cubeSpacing.z * z );
                 XMMATRIX translationMatrix = XMMatrixTranslation( center.x, center.y, center.z );

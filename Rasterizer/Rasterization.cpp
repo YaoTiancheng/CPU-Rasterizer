@@ -111,7 +111,7 @@ static SMatrix s_WorldViewProjectionMatrix =
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 0.f, 1.f,
     };
-static float s_BaseColor[ 4 ] = { 1.f, 1.f, 1.f, 1.f };
+static SMaterial s_Material = { { 1.f, 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f }, 32.f };
 static SLight s_Light;
 
 static SViewport s_Viewport = { 0 };
@@ -697,10 +697,10 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         b *= vertexColorB;
                     }
 
-                    r *= s_BaseColor[ 0 ];
-                    g *= s_BaseColor[ 1 ];
-                    b *= s_BaseColor[ 2 ];
-                    a *= s_BaseColor[ 3 ];
+                    r *= s_Material.m_Diffuse.m_X;
+                    g *= s_Material.m_Diffuse.m_Y;
+                    b *= s_Material.m_Diffuse.m_Z;
+                    a *= s_Material.m_Diffuse.m_W;
 
                     if ( NeedLighting )
                     {
@@ -745,9 +745,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         float NdotH = vertexNormalX * halfVecX + vertexNormalY * halfVecY + vertexNormalZ * halfVecZ;
                         NdotH = std::max( 0.f, NdotH );
 
-                        r = r * ( s_Light.m_Diffuse.m_X * NdotL + s_Light.m_Specular.m_X * std::powf( NdotH, s_Light.m_Power ) + s_Light.m_Ambient.m_X );
-                        g = g * ( s_Light.m_Diffuse.m_Y * NdotL + s_Light.m_Specular.m_Y * std::powf( NdotH, s_Light.m_Power ) + s_Light.m_Ambient.m_Y );
-                        b = b * ( s_Light.m_Diffuse.m_Z * NdotL + s_Light.m_Specular.m_Z * std::powf( NdotH, s_Light.m_Power ) + s_Light.m_Ambient.m_Z );
+                        r = r * ( s_Light.m_Diffuse.m_X * NdotL + s_Light.m_Ambient.m_X ) + s_Material.m_Specular.m_X * s_Light.m_Specular.m_X * std::powf( NdotH, s_Material.m_Power );
+                        g = g * ( s_Light.m_Diffuse.m_Y * NdotL + s_Light.m_Ambient.m_Y ) + s_Material.m_Specular.m_Y * s_Light.m_Specular.m_Y * std::powf( NdotH, s_Material.m_Power );
+                        b = b * ( s_Light.m_Diffuse.m_Z * NdotL + s_Light.m_Ambient.m_Z ) + s_Material.m_Specular.m_Z * s_Light.m_Specular.m_Z * std::powf( NdotH, s_Material.m_Power );
                     }
 
                     r = std::fmin( r, 1.f );
@@ -990,9 +990,14 @@ void Rasterizer::SetDepthTarget( const SImage& image )
     s_DepthTarget = image;
 }
 
-void Rasterizer::SetBaseColor( const float* color )
+void Rasterizer::SetMaterialDiffuse( SVector4 color )
 {
-    memcpy( s_BaseColor, color, sizeof( s_BaseColor ) );
+    s_Material.m_Diffuse = color;
+}
+
+void Rasterizer::SetMaterial( const SMaterial& material )
+{
+    s_Material = material;
 }
 
 void Rasterizer::SetLight( const SLight& light )
