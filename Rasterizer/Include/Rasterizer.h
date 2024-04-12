@@ -122,6 +122,7 @@ namespace Rasterizer
     {
         eInvalid,
         eDirectional,
+        ePoint
     };
 
     struct SPipelineState

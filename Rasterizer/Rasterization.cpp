@@ -5,7 +5,7 @@
 #include "MathHelper.h"
 
 #define SIMD_WIDTH 4
-#define MAX_PIPELINE_STATE_COUNT 8
+#define MAX_PIPELINE_STATE_COUNT 12
 
 using namespace Rasterizer;
 
@@ -715,9 +715,6 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         normalY *= rcpDenorm;
                         normalZ *= rcpDenorm;
 
-                        float NdotL = normalX * s_Light.m_Position.m_X + normalY * s_Light.m_Position.m_Y + normalZ * s_Light.m_Position.m_Z;
-                        NdotL = std::max( 0.f, NdotL );
-
                         float viewPosX = viewPosX_w * w;
                         float viewPosY = viewPosY_w * w;
                         float viewPosZ = viewPosZ_w * w;
@@ -732,9 +729,32 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         viewVecY *= rcpDenorm;
                         viewVecZ *= rcpDenorm;
 
-                        float halfVecX = s_Light.m_Position.m_X + viewVecX;
-                        float halfVecY = s_Light.m_Position.m_Y + viewVecY;
-                        float halfVecZ = s_Light.m_Position.m_Z + viewVecZ;
+                        float lightVecX, lightVecY, lightVecZ, lightDistanceSqr;
+                        if ( LightType == ELightType::eDirectional )
+                        {
+                            lightVecX = s_Light.m_Position.m_X;
+                            lightVecY = s_Light.m_Position.m_Y;
+                            lightVecZ = s_Light.m_Position.m_Z;
+                        }
+                        else if ( LightType == ELightType::ePoint )
+                        {
+                            lightVecX = s_Light.m_Position.m_X - viewPosX;
+                            lightVecY = s_Light.m_Position.m_Y - viewPosY;
+                            lightVecZ = s_Light.m_Position.m_Z - viewPosZ;
+                            lightDistanceSqr = lightVecX * lightVecX + lightVecY * lightVecY + lightVecZ * lightVecZ;
+                            // Normalize the light vector
+                            rcpDenorm = 1.f / sqrtf( lightDistanceSqr );
+                            lightVecX *= rcpDenorm;
+                            lightVecY *= rcpDenorm;
+                            lightVecZ *= rcpDenorm;
+                        }
+
+                        float NdotL = normalX * lightVecX + normalY * lightVecY + normalZ * lightVecZ;
+                        NdotL = std::max( 0.f, NdotL );
+
+                        float halfVecX = lightVecX + viewVecX;
+                        float halfVecY = lightVecY + viewVecY;
+                        float halfVecZ = lightVecZ + viewVecZ;
                         // Re-normalize the half vector
                         length = halfVecX * halfVecX + halfVecY * halfVecY + halfVecZ * halfVecZ;
                         rcpDenorm = 1.0f / sqrtf( length );
@@ -745,9 +765,29 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         float NdotH = normalX * halfVecX + normalY * halfVecY + normalZ * halfVecZ;
                         NdotH = std::max( 0.f, NdotH );
 
-                        r = r * ( s_Light.m_Diffuse.m_X * NdotL + s_Light.m_Ambient.m_X ) + s_Material.m_Specular.m_X * s_Light.m_Specular.m_X * std::powf( NdotH, s_Material.m_Power );
-                        g = g * ( s_Light.m_Diffuse.m_Y * NdotL + s_Light.m_Ambient.m_Y ) + s_Material.m_Specular.m_Y * s_Light.m_Specular.m_Y * std::powf( NdotH, s_Material.m_Power );
-                        b = b * ( s_Light.m_Diffuse.m_Z * NdotL + s_Light.m_Ambient.m_Z ) + s_Material.m_Specular.m_Z * s_Light.m_Specular.m_Z * std::powf( NdotH, s_Material.m_Power );
+                        const float lambertR = r * s_Light.m_Diffuse.m_X * NdotL;
+                        const float lambertG = g * s_Light.m_Diffuse.m_Y * NdotL;
+                        const float lambertB = b * s_Light.m_Diffuse.m_Z * NdotL;
+                        const float blinnPhong = NdotL > 0.f ? std::powf( NdotH, s_Material.m_Power ) : 0.f;
+                        const float specularR = s_Material.m_Specular.m_X * s_Light.m_Specular.m_X * blinnPhong;
+                        const float specularG = s_Material.m_Specular.m_Y * s_Light.m_Specular.m_Y * blinnPhong;
+                        const float specularB = s_Material.m_Specular.m_Z * s_Light.m_Specular.m_Z * blinnPhong;
+
+                        r = lambertR + specularR;
+                        g = lambertG + specularG;
+                        b = lambertB + specularB;
+                        
+                        if ( LightType == ELightType::ePoint )
+                        {
+                            const float rcpDistanceSqr = 1.f / lightDistanceSqr;
+                            r *= rcpDistanceSqr;
+                            g *= rcpDistanceSqr;
+                            b *= rcpDistanceSqr;
+                        }
+
+                        r += s_Light.m_Ambient.m_X;
+                        g += s_Light.m_Ambient.m_Y;
+                        b += s_Light.m_Ambient.m_Z;
                     }
 
                     r = std::fmin( r, 1.f );
@@ -929,6 +969,10 @@ void Rasterizer::Initialize()
     SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::eDirectional )
     SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::eDirectional )
     SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::ePoint )
 #undef SET_PIPELINE_FUNCTION_POINTERS
 }
 

@@ -136,8 +136,8 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     light.m_Specular = Rasterizer::SVector3( 1.f, 1.f, 1.f );
     light.m_Ambient = Rasterizer::SVector3( 0.05f, 0.06f, 0.05f );
     // Transform the light from world space to view space
-    XMVECTOR lightDirection = XMVector3TransformNormal( XMVectorSet( 0.f, 1.f, 0.f, 0.f ), viewMatrix );
-    XMStoreFloat3( (XMFLOAT3*)light.m_Position.m_Data, lightDirection );
+    XMVECTOR lightPosition = XMVector3TransformNormal( XMVectorSet( 0.f, 1.f, 0.f, 0.f ), viewMatrix );
+    XMStoreFloat3( (XMFLOAT3*)light.m_Position.m_Data, lightPosition );
     Rasterizer::SetLight( light );
 
     Rasterizer::SMaterial material;
