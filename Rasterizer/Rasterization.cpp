@@ -602,20 +602,20 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     
     SETUP_ATTRIBUTE( rcpw, v0.m_Rcpw, v1.m_Rcpw, v2.m_Rcpw, NeedRcpw )
 
-    SETUP_ATTRIBUTE( texU, v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, UseTexture )
-    SETUP_ATTRIBUTE( texV, v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, UseTexture )
+    SETUP_ATTRIBUTE( texU_w, v0.m_TexcoordU, v1.m_TexcoordU, v2.m_TexcoordU, UseTexture )
+    SETUP_ATTRIBUTE( texV_w, v0.m_TexcoordV, v1.m_TexcoordV, v2.m_TexcoordV, UseTexture )
 
-    SETUP_ATTRIBUTE( colorR, v0.m_ColorR, v1.m_ColorR, v2.m_ColorR, UseVertexColor )
-    SETUP_ATTRIBUTE( colorG, v0.m_ColorG, v1.m_ColorG, v2.m_ColorG, UseVertexColor )
-    SETUP_ATTRIBUTE( colorB, v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, UseVertexColor )
+    SETUP_ATTRIBUTE( colorR_w, v0.m_ColorR, v1.m_ColorR, v2.m_ColorR, UseVertexColor )
+    SETUP_ATTRIBUTE( colorG_w, v0.m_ColorG, v1.m_ColorG, v2.m_ColorG, UseVertexColor )
+    SETUP_ATTRIBUTE( colorB_w, v0.m_ColorB, v1.m_ColorB, v2.m_ColorB, UseVertexColor )
 
-    SETUP_ATTRIBUTE( normalX, v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, NeedLighting )
-    SETUP_ATTRIBUTE( normalY, v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, NeedLighting )
-    SETUP_ATTRIBUTE( normalZ, v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, NeedLighting )
+    SETUP_ATTRIBUTE( normalX_w, v0.m_NormalX, v1.m_NormalX, v2.m_NormalX, NeedLighting )
+    SETUP_ATTRIBUTE( normalY_w, v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, NeedLighting )
+    SETUP_ATTRIBUTE( normalZ_w, v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, NeedLighting )
 
-    SETUP_ATTRIBUTE( viewPosX, v0.m_ViewPosX, v1.m_ViewPosX, v2.m_ViewPosX, NeedLighting )
-    SETUP_ATTRIBUTE( viewPosY, v0.m_ViewPosY, v1.m_ViewPosY, v2.m_ViewPosY, NeedLighting )
-    SETUP_ATTRIBUTE( viewPosZ, v0.m_ViewPosZ, v1.m_ViewPosZ, v2.m_ViewPosZ, NeedLighting )
+    SETUP_ATTRIBUTE( viewPosX_w, v0.m_ViewPosX, v1.m_ViewPosX, v2.m_ViewPosX, NeedLighting )
+    SETUP_ATTRIBUTE( viewPosY_w, v0.m_ViewPosY, v1.m_ViewPosY, v2.m_ViewPosY, NeedLighting )
+    SETUP_ATTRIBUTE( viewPosZ_w, v0.m_ViewPosZ, v1.m_ViewPosZ, v2.m_ViewPosZ, NeedLighting )
 
 #undef SETUP_ATTRIBUTE
 
@@ -647,20 +647,20 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         
         ROW_INIT_ATTRIBUTE( rcpw, NeedRcpw )
 
-        ROW_INIT_ATTRIBUTE( texU, UseTexture )
-        ROW_INIT_ATTRIBUTE( texV, UseTexture )
+        ROW_INIT_ATTRIBUTE( texU_w, UseTexture )
+        ROW_INIT_ATTRIBUTE( texV_w, UseTexture )
 
-        ROW_INIT_ATTRIBUTE( colorR, UseVertexColor )
-        ROW_INIT_ATTRIBUTE( colorG, UseVertexColor )
-        ROW_INIT_ATTRIBUTE( colorB, UseVertexColor )
+        ROW_INIT_ATTRIBUTE( colorR_w, UseVertexColor )
+        ROW_INIT_ATTRIBUTE( colorG_w, UseVertexColor )
+        ROW_INIT_ATTRIBUTE( colorB_w, UseVertexColor )
 
-        ROW_INIT_ATTRIBUTE( normalX, NeedLighting )
-        ROW_INIT_ATTRIBUTE( normalY, NeedLighting )
-        ROW_INIT_ATTRIBUTE( normalZ, NeedLighting )
+        ROW_INIT_ATTRIBUTE( normalX_w, NeedLighting )
+        ROW_INIT_ATTRIBUTE( normalY_w, NeedLighting )
+        ROW_INIT_ATTRIBUTE( normalZ_w, NeedLighting )
 
-        ROW_INIT_ATTRIBUTE( viewPosX, NeedLighting )
-        ROW_INIT_ATTRIBUTE( viewPosY, NeedLighting )
-        ROW_INIT_ATTRIBUTE( viewPosZ, NeedLighting )
+        ROW_INIT_ATTRIBUTE( viewPosX_w, NeedLighting )
+        ROW_INIT_ATTRIBUTE( viewPosY_w, NeedLighting )
+        ROW_INIT_ATTRIBUTE( viewPosZ_w, NeedLighting )
 
 #undef ROW_INIT_ATTRIBUTE
 
@@ -682,16 +682,16 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     float r = 1.f, g = 1.f, b = 1.f, a = 1.f;
                     if ( UseTexture )
                     { 
-                        float texcoordU = texU * w;
-                        float texcoordV = texV * w;
-                        SampleTexture_PointClamp( s_Texture, texcoordU, texcoordV, &r, &g, &b, &a );
+                        float texU = texU_w * w;
+                        float texV = texV_w * w;
+                        SampleTexture_PointClamp( s_Texture, texU, texV, &r, &g, &b, &a );
                     }
 
                     if ( UseVertexColor )
                     {
-                        float vertexColorR = colorR * w;
-                        float vertexColorG = colorG * w;
-                        float vertexColorB = colorB * w;
+                        float vertexColorR = colorR_w * w;
+                        float vertexColorG = colorG_w * w;
+                        float vertexColorB = colorB_w * w;
                         r *= vertexColorR;
                         g *= vertexColorG;
                         b *= vertexColorB;
@@ -704,37 +704,37 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
 
                     if ( NeedLighting )
                     {
-                        float vertexNormalX = normalX * w;
-                        float vertexNormalY = normalY * w;
-                        float vertexNormalZ = normalZ * w;
+                        float normalX = normalX_w * w;
+                        float normalY = normalY_w * w;
+                        float normalZ = normalZ_w * w;
 
                         // Re-normalize the normal
-                        float length = vertexNormalX * vertexNormalX + vertexNormalY * vertexNormalY + vertexNormalZ * vertexNormalZ;
+                        float length = normalX * normalX + normalY * normalY + normalZ * normalZ;
                         float rcpDenorm = 1.0f / sqrtf( length );
-                        vertexNormalX *= rcpDenorm;
-                        vertexNormalY *= rcpDenorm;
-                        vertexNormalZ *= rcpDenorm;
+                        normalX *= rcpDenorm;
+                        normalY *= rcpDenorm;
+                        normalZ *= rcpDenorm;
 
-                        float NdotL = vertexNormalX * s_Light.m_Position.m_X + vertexNormalY * s_Light.m_Position.m_Y + vertexNormalZ * s_Light.m_Position.m_Z;
+                        float NdotL = normalX * s_Light.m_Position.m_X + normalY * s_Light.m_Position.m_Y + normalZ * s_Light.m_Position.m_Z;
                         NdotL = std::max( 0.f, NdotL );
 
-                        float vertexViewPosX = viewPosX * w;
-                        float vertexViewPosY = viewPosY * w;
-                        float vertexViewPosZ = viewPosZ * w;
-                        float vertexViewVecX = -vertexViewPosX;
-                        float vertexViewVecY = -vertexViewPosY;
-                        float vertexViewVecZ = -vertexViewPosZ;
+                        float viewPosX = viewPosX_w * w;
+                        float viewPosY = viewPosY_w * w;
+                        float viewPosZ = viewPosZ_w * w;
+                        float viewVecX = -viewPosX;
+                        float viewVecY = -viewPosY;
+                        float viewVecZ = -viewPosZ;
 
                         // Re-normalize the view vector
-                        length = vertexViewVecX * vertexViewVecX + vertexViewVecY * vertexViewVecY + vertexViewVecZ * vertexViewVecZ;
+                        length = viewVecX * viewVecX + viewVecY * viewVecY + viewVecZ * viewVecZ;
                         rcpDenorm = 1.0f / sqrtf( length );
-                        vertexViewVecX *= rcpDenorm;
-                        vertexViewVecY *= rcpDenorm;
-                        vertexViewVecZ *= rcpDenorm;
+                        viewVecX *= rcpDenorm;
+                        viewVecY *= rcpDenorm;
+                        viewVecZ *= rcpDenorm;
 
-                        float halfVecX = s_Light.m_Position.m_X + vertexViewVecX;
-                        float halfVecY = s_Light.m_Position.m_Y + vertexViewVecY;
-                        float halfVecZ = s_Light.m_Position.m_Z + vertexViewVecZ;
+                        float halfVecX = s_Light.m_Position.m_X + viewVecX;
+                        float halfVecY = s_Light.m_Position.m_Y + viewVecY;
+                        float halfVecZ = s_Light.m_Position.m_Z + viewVecZ;
                         // Re-normalize the half vector
                         length = halfVecX * halfVecX + halfVecY * halfVecY + halfVecZ * halfVecZ;
                         rcpDenorm = 1.0f / sqrtf( length );
@@ -742,7 +742,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         halfVecY *= rcpDenorm;
                         halfVecZ *= rcpDenorm;
 
-                        float NdotH = vertexNormalX * halfVecX + vertexNormalY * halfVecY + vertexNormalZ * halfVecZ;
+                        float NdotH = normalX * halfVecX + normalY * halfVecY + normalZ * halfVecZ;
                         NdotH = std::max( 0.f, NdotH );
 
                         r = r * ( s_Light.m_Diffuse.m_X * NdotL + s_Light.m_Ambient.m_X ) + s_Material.m_Specular.m_X * s_Light.m_Specular.m_X * std::powf( NdotH, s_Material.m_Power );
@@ -776,20 +776,20 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
 
             ROW_INC_ATTRIBUTE( rcpw, NeedRcpw )
 
-            ROW_INC_ATTRIBUTE( texU, UseTexture )
-            ROW_INC_ATTRIBUTE( texV, UseTexture )
+            ROW_INC_ATTRIBUTE( texU_w, UseTexture )
+            ROW_INC_ATTRIBUTE( texV_w, UseTexture )
 
-            ROW_INC_ATTRIBUTE( colorR, UseVertexColor )
-            ROW_INC_ATTRIBUTE( colorG, UseVertexColor )
-            ROW_INC_ATTRIBUTE( colorB, UseVertexColor )
+            ROW_INC_ATTRIBUTE( colorR_w, UseVertexColor )
+            ROW_INC_ATTRIBUTE( colorG_w, UseVertexColor )
+            ROW_INC_ATTRIBUTE( colorB_w, UseVertexColor )
 
-            ROW_INC_ATTRIBUTE( normalX, NeedLighting )
-            ROW_INC_ATTRIBUTE( normalY, NeedLighting )
-            ROW_INC_ATTRIBUTE( normalZ, NeedLighting )
+            ROW_INC_ATTRIBUTE( normalX_w, NeedLighting )
+            ROW_INC_ATTRIBUTE( normalY_w, NeedLighting )
+            ROW_INC_ATTRIBUTE( normalZ_w, NeedLighting )
 
-            ROW_INC_ATTRIBUTE( viewPosX, NeedLighting )
-            ROW_INC_ATTRIBUTE( viewPosY, NeedLighting )
-            ROW_INC_ATTRIBUTE( viewPosZ, NeedLighting )
+            ROW_INC_ATTRIBUTE( viewPosX_w, NeedLighting )
+            ROW_INC_ATTRIBUTE( viewPosY_w, NeedLighting )
+            ROW_INC_ATTRIBUTE( viewPosZ_w, NeedLighting )
 
 #undef ROW_INC_ATTRIBUTE
         }
@@ -808,20 +808,20 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
 
         VERTICAL_INC_ATTRIBUTE( rcpw, NeedRcpw )
 
-        VERTICAL_INC_ATTRIBUTE( texU, UseTexture )
-        VERTICAL_INC_ATTRIBUTE( texV, UseTexture )
+        VERTICAL_INC_ATTRIBUTE( texU_w, UseTexture )
+        VERTICAL_INC_ATTRIBUTE( texV_w, UseTexture )
 
-        VERTICAL_INC_ATTRIBUTE( colorR, UseVertexColor )
-        VERTICAL_INC_ATTRIBUTE( colorG, UseVertexColor )
-        VERTICAL_INC_ATTRIBUTE( colorB, UseVertexColor )
+        VERTICAL_INC_ATTRIBUTE( colorR_w, UseVertexColor )
+        VERTICAL_INC_ATTRIBUTE( colorG_w, UseVertexColor )
+        VERTICAL_INC_ATTRIBUTE( colorB_w, UseVertexColor )
 
-        VERTICAL_INC_ATTRIBUTE( normalX, NeedLighting )
-        VERTICAL_INC_ATTRIBUTE( normalY, NeedLighting )
-        VERTICAL_INC_ATTRIBUTE( normalZ, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( normalX_w, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( normalY_w, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( normalZ_w, NeedLighting )
 
-        VERTICAL_INC_ATTRIBUTE( viewPosX, NeedLighting )
-        VERTICAL_INC_ATTRIBUTE( viewPosY, NeedLighting )
-        VERTICAL_INC_ATTRIBUTE( viewPosZ, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( viewPosX_w, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( viewPosY_w, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( viewPosZ_w, NeedLighting )
 
 #undef VERTICAL_INC_ATTRIBUTE
     }
