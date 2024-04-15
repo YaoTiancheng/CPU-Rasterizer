@@ -118,28 +118,39 @@ namespace Rasterizer
         uint32_t m_Height;
     };
 
-    enum ELightType
+    enum class ELightingModel : uint32_t
     {
-        eInvalid,
+        eUnlit,
+        eLambert,
+        eBlinnPhong,
+        eCount
+    };
+
+    enum class ELightType : uint32_t
+    {
         eDirectional,
-        ePoint
+        ePoint,
+        eCount
     };
 
     struct SPipelineState
     {
         SPipelineState()
-            : m_LightType( ELightType::eInvalid )
+            : m_LightingModel( ELightingModel::eUnlit )
+            , m_LightType( ELightType::eDirectional )
             , m_UseTexture( false )
             , m_UseVertexColor( false )
         {}
         
-        SPipelineState( bool useTexture, bool useVertexColor, ELightType lightType )
-            : m_LightType( lightType )
+        SPipelineState( bool useTexture, bool useVertexColor, ELightingModel lightingModel = ELightingModel::eUnlit, ELightType lightType = ELightType::eDirectional )
+            : m_LightingModel( lightingModel )
+            , m_LightType( lightType )
             , m_UseTexture( useTexture )
             , m_UseVertexColor( useVertexColor )
         {
         }
 
+        ELightingModel m_LightingModel;
         ELightType m_LightType;
         bool m_UseTexture;
         bool m_UseVertexColor;

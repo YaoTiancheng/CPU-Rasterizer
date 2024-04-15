@@ -5,7 +5,7 @@
 #include "MathHelper.h"
 
 #define SIMD_WIDTH 4
-#define MAX_PIPELINE_STATE_COUNT 12
+#define MAX_PIPELINE_STATE_COUNT 24
 
 using namespace Rasterizer;
 
@@ -254,7 +254,7 @@ static inline void __vectorcall ScatterInt4( __m128i value, uint8_t* stream, uin
     *(int32_t*)( stream + stride + stride + stride ) = int4.m_Data[ 3 ];
 }
 
-template <bool NeedLighting>
+template <bool UseNormal, bool UseViewPos>
 static void TransformVertices( 
     const uint8_t* inPos,
     const uint8_t* inNormal,
@@ -288,7 +288,7 @@ static void TransformVertices(
     __m128 m33 = _mm_set1_ps( s_WorldViewProjectionMatrix.m_Data[ 15 ] );
 
     __m128 n00, n01, n02, n10, n11, n12, n20, n21, n22, n30, n31, n32;
-    if ( NeedLighting )
+    if ( UseViewPos )
     {
         n00 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 0 ] );
         n01 = _mm_set1_ps( s_WorldViewMatrix.m_Data[ 1 ] );
@@ -324,7 +324,7 @@ static void TransformVertices(
         inPos += SIMD_WIDTH * posStride;
         outPos += SIMD_WIDTH * outStride;
 
-        if ( NeedLighting )
+        if ( UseViewPos )
         { 
             // Get view space position
             SIMDMath::Vec3DotVec4( x, y, z, n00, n10, n20, n30, dotX );
@@ -338,7 +338,7 @@ static void TransformVertices(
         }
     }
 
-    if ( NeedLighting )
+    if ( UseNormal )
     { 
         m00 = _mm_set1_ps( s_NormalMatrix.m_Data[ 0 ] );
         m01 = _mm_set1_ps( s_NormalMatrix.m_Data[ 1 ] );
@@ -541,7 +541,7 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
-template <bool UseTexture, bool UseVertexColor, ELightType LightType>
+template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType>
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
     // Calculate bounding box of the triangle and crop with the viewport
@@ -595,7 +595,8 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         name##_b = BarycentricInterplation( a0, a1, a2, bb12, bb20, bb01 ); \
     }
 
-    constexpr bool NeedLighting = LightType != ELightType::eInvalid;
+    constexpr bool NeedLighting = LightingModel != ELightingModel::eUnlit;
+    constexpr bool NeedViewPos = NeedLighting && ( LightingModel == ELightingModel::eBlinnPhong || LightType == ELightType::ePoint );
     constexpr bool NeedRcpw = UseTexture || UseVertexColor || NeedLighting;
 
     SETUP_ATTRIBUTE( z, v0.m_Z, v1.m_Z, v2.m_Z, true )
@@ -613,9 +614,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     SETUP_ATTRIBUTE( normalY_w, v0.m_NormalY, v1.m_NormalY, v2.m_NormalY, NeedLighting )
     SETUP_ATTRIBUTE( normalZ_w, v0.m_NormalZ, v1.m_NormalZ, v2.m_NormalZ, NeedLighting )
 
-    SETUP_ATTRIBUTE( viewPosX_w, v0.m_ViewPosX, v1.m_ViewPosX, v2.m_ViewPosX, NeedLighting )
-    SETUP_ATTRIBUTE( viewPosY_w, v0.m_ViewPosY, v1.m_ViewPosY, v2.m_ViewPosY, NeedLighting )
-    SETUP_ATTRIBUTE( viewPosZ_w, v0.m_ViewPosZ, v1.m_ViewPosZ, v2.m_ViewPosZ, NeedLighting )
+    SETUP_ATTRIBUTE( viewPosX_w, v0.m_ViewPosX, v1.m_ViewPosX, v2.m_ViewPosX, NeedViewPos )
+    SETUP_ATTRIBUTE( viewPosY_w, v0.m_ViewPosY, v1.m_ViewPosY, v2.m_ViewPosY, NeedViewPos )
+    SETUP_ATTRIBUTE( viewPosZ_w, v0.m_ViewPosZ, v1.m_ViewPosZ, v2.m_ViewPosZ, NeedViewPos )
 
 #undef SETUP_ATTRIBUTE
 
@@ -658,9 +659,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         ROW_INIT_ATTRIBUTE( normalY_w, NeedLighting )
         ROW_INIT_ATTRIBUTE( normalZ_w, NeedLighting )
 
-        ROW_INIT_ATTRIBUTE( viewPosX_w, NeedLighting )
-        ROW_INIT_ATTRIBUTE( viewPosY_w, NeedLighting )
-        ROW_INIT_ATTRIBUTE( viewPosZ_w, NeedLighting )
+        ROW_INIT_ATTRIBUTE( viewPosX_w, NeedViewPos )
+        ROW_INIT_ATTRIBUTE( viewPosY_w, NeedViewPos )
+        ROW_INIT_ATTRIBUTE( viewPosZ_w, NeedViewPos )
 
 #undef ROW_INIT_ATTRIBUTE
 
@@ -707,7 +708,6 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         float normalX = normalX_w * w;
                         float normalY = normalY_w * w;
                         float normalZ = normalZ_w * w;
-
                         // Re-normalize the normal
                         float length = normalX * normalX + normalY * normalY + normalZ * normalZ;
                         float rcpDenorm = 1.0f / sqrtf( length );
@@ -715,19 +715,13 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         normalY *= rcpDenorm;
                         normalZ *= rcpDenorm;
 
-                        float viewPosX = viewPosX_w * w;
-                        float viewPosY = viewPosY_w * w;
-                        float viewPosZ = viewPosZ_w * w;
-                        float viewVecX = -viewPosX;
-                        float viewVecY = -viewPosY;
-                        float viewVecZ = -viewPosZ;
-
-                        // Re-normalize the view vector
-                        length = viewVecX * viewVecX + viewVecY * viewVecY + viewVecZ * viewVecZ;
-                        rcpDenorm = 1.0f / sqrtf( length );
-                        viewVecX *= rcpDenorm;
-                        viewVecY *= rcpDenorm;
-                        viewVecZ *= rcpDenorm;
+                        float viewPosX, viewPosY, viewPosZ;
+                        if ( NeedViewPos )
+                        { 
+                            viewPosX = viewPosX_w * w;
+                            viewPosY = viewPosY_w * w;
+                            viewPosZ = viewPosZ_w * w;
+                        }
 
                         float lightVecX, lightVecY, lightVecZ, lightDistanceSqr;
                         if ( LightType == ELightType::eDirectional )
@@ -752,26 +746,41 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                         float NdotL = normalX * lightVecX + normalY * lightVecY + normalZ * lightVecZ;
                         NdotL = std::max( 0.f, NdotL );
 
-                        float halfVecX = lightVecX + viewVecX;
-                        float halfVecY = lightVecY + viewVecY;
-                        float halfVecZ = lightVecZ + viewVecZ;
-                        // Re-normalize the half vector
-                        length = halfVecX * halfVecX + halfVecY * halfVecY + halfVecZ * halfVecZ;
-                        rcpDenorm = 1.0f / sqrtf( length );
-                        halfVecX *= rcpDenorm;
-                        halfVecY *= rcpDenorm;
-                        halfVecZ *= rcpDenorm;
-
-                        float NdotH = normalX * halfVecX + normalY * halfVecY + normalZ * halfVecZ;
-                        NdotH = std::max( 0.f, NdotH );
-
                         const float lambertR = r * s_Light.m_Diffuse.m_X * NdotL;
                         const float lambertG = g * s_Light.m_Diffuse.m_Y * NdotL;
                         const float lambertB = b * s_Light.m_Diffuse.m_Z * NdotL;
-                        const float blinnPhong = NdotL > 0.f ? std::powf( NdotH, s_Material.m_Power ) : 0.f;
-                        const float specularR = s_Material.m_Specular.m_X * s_Light.m_Specular.m_X * blinnPhong;
-                        const float specularG = s_Material.m_Specular.m_Y * s_Light.m_Specular.m_Y * blinnPhong;
-                        const float specularB = s_Material.m_Specular.m_Z * s_Light.m_Specular.m_Z * blinnPhong;
+
+                        float specularR = 0.f, specularG = 0.f, specularB = 0.f;
+                        if ( LightingModel == ELightingModel::eBlinnPhong )
+                        { 
+                            float viewVecX = -viewPosX;
+                            float viewVecY = -viewPosY;
+                            float viewVecZ = -viewPosZ;
+                            // Re-normalize the view vector
+                            length = viewVecX * viewVecX + viewVecY * viewVecY + viewVecZ * viewVecZ;
+                            rcpDenorm = 1.0f / sqrtf( length );
+                            viewVecX *= rcpDenorm;
+                            viewVecY *= rcpDenorm;
+                            viewVecZ *= rcpDenorm;
+
+                            float halfVecX = lightVecX + viewVecX;
+                            float halfVecY = lightVecY + viewVecY;
+                            float halfVecZ = lightVecZ + viewVecZ;
+                            // Re-normalize the half vector
+                            length = halfVecX * halfVecX + halfVecY * halfVecY + halfVecZ * halfVecZ;
+                            rcpDenorm = 1.0f / sqrtf( length );
+                            halfVecX *= rcpDenorm;
+                            halfVecY *= rcpDenorm;
+                            halfVecZ *= rcpDenorm;
+
+                            float NdotH = normalX * halfVecX + normalY * halfVecY + normalZ * halfVecZ;
+                            NdotH = std::max( 0.f, NdotH );
+
+                            const float blinnPhong = NdotL > 0.f ? std::powf( NdotH, s_Material.m_Power ) : 0.f;
+                            specularR = s_Material.m_Specular.m_X * s_Light.m_Specular.m_X * blinnPhong;
+                            specularG = s_Material.m_Specular.m_Y * s_Light.m_Specular.m_Y * blinnPhong;
+                            specularB = s_Material.m_Specular.m_Z * s_Light.m_Specular.m_Z * blinnPhong;
+                        }
 
                         r = lambertR + specularR;
                         g = lambertG + specularG;
@@ -827,9 +836,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
             ROW_INC_ATTRIBUTE( normalY_w, NeedLighting )
             ROW_INC_ATTRIBUTE( normalZ_w, NeedLighting )
 
-            ROW_INC_ATTRIBUTE( viewPosX_w, NeedLighting )
-            ROW_INC_ATTRIBUTE( viewPosY_w, NeedLighting )
-            ROW_INC_ATTRIBUTE( viewPosZ_w, NeedLighting )
+            ROW_INC_ATTRIBUTE( viewPosX_w, NeedViewPos )
+            ROW_INC_ATTRIBUTE( viewPosY_w, NeedViewPos )
+            ROW_INC_ATTRIBUTE( viewPosZ_w, NeedViewPos )
 
 #undef ROW_INC_ATTRIBUTE
         }
@@ -859,18 +868,19 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
         VERTICAL_INC_ATTRIBUTE( normalY_w, NeedLighting )
         VERTICAL_INC_ATTRIBUTE( normalZ_w, NeedLighting )
 
-        VERTICAL_INC_ATTRIBUTE( viewPosX_w, NeedLighting )
-        VERTICAL_INC_ATTRIBUTE( viewPosY_w, NeedLighting )
-        VERTICAL_INC_ATTRIBUTE( viewPosZ_w, NeedLighting )
+        VERTICAL_INC_ATTRIBUTE( viewPosX_w, NeedViewPos )
+        VERTICAL_INC_ATTRIBUTE( viewPosY_w, NeedViewPos )
+        VERTICAL_INC_ATTRIBUTE( viewPosZ_w, NeedViewPos )
 
 #undef VERTICAL_INC_ATTRIBUTE
     }
 }
 
-template <bool UseTexture, bool UseVertexColor, ELightType LightType, bool IsIndexed>
+template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType, bool IsIndexed>
 static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, const uint8_t* color, const uint8_t* normal, const uint8_t* viewPos, uint32_t stride, const uint32_t* indices, uint32_t trianglesCount )
 {
-    constexpr bool NeedLighting = LightType != ELightType::eInvalid;
+    constexpr bool NeedLighting = LightingModel != ELightingModel::eUnlit;
+    constexpr bool NeedViewPos = NeedLighting && ( LightingModel == ELightingModel::eBlinnPhong || LightType == ELightType::ePoint );
     constexpr bool NeedRcpw = UseTexture || UseVertexColor || NeedLighting;
 
     const uint8_t* posW = pos + sizeof( int32_t ) * 2 + sizeof( float );
@@ -921,58 +931,74 @@ static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, con
             v0.SetNormal( normal + offset0 );
             v1.SetNormal( normal + offset1 );
             v2.SetNormal( normal + offset2 );
+        }
+        if ( NeedViewPos )
+        {
             v0.SetViewPos( viewPos + offset0 );
             v1.SetViewPos( viewPos + offset1 );
             v2.SetViewPos( viewPos + offset2 );
         }
-        RasterizeTriangle<UseTexture, UseVertexColor, LightType>( v0, v1 ,v2 );
+        RasterizeTriangle<UseTexture, UseVertexColor, LightingModel, LightType>( v0, v1 ,v2 );
     }
 }
 
 
-static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor, ELightType lightType )
+static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor, ELightingModel LightingModel, ELightType lightType )
 {
-    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x2 : 0 ) | ( lightType << 2 );
+    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x2 : 0 ) | ( (uint32_t)lightType << 2 ) | ( (uint32_t)LightingModel << 3 );
 }
 
 static uint32_t MakePipelineStateIndex( const SPipelineState& state )
 {
-    return MakePipelineStateIndex( state.m_UseTexture, state.m_UseVertexColor, state.m_LightType );
+    return MakePipelineStateIndex( state.m_UseTexture, state.m_UseVertexColor, state.m_LightingModel, state.m_LightType );
 }
 
-template <bool UseTexture, bool UseVertexColor, ELightType LightType>
+template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType>
 SPipelineFunctionPointers GetPipelineFunctionPointers()
 {
-    constexpr bool NeedLighting = LightType != ELightType::eInvalid;
+    constexpr bool NeedLighting = LightingModel != ELightingModel::eUnlit;
+    constexpr bool NeedViewPos = NeedLighting && ( LightingModel == ELightingModel::eBlinnPhong || LightType == ELightType::ePoint );
     SPipelineFunctionPointers ptrs;
-    ptrs.m_VertexTransformFunction = TransformVertices<NeedLighting>;
-    ptrs.m_PerspectiveDivisionFunction = PerspectiveDivision<UseTexture, UseVertexColor, NeedLighting, NeedLighting>;
-    ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, LightType, false>;
-    ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, LightType, true>;
+    ptrs.m_VertexTransformFunction = TransformVertices<NeedLighting, NeedViewPos>;
+    ptrs.m_PerspectiveDivisionFunction = PerspectiveDivision<UseTexture, UseVertexColor, NeedLighting, NeedViewPos>;
+    ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, LightingModel, LightType, false>;
+    ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, LightingModel, LightType, true>;
     return ptrs;
 }
 
 void Rasterizer::Initialize()
 {
-#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor, lightType ) \
+#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor, lightingModel, lightType ) \
     { \
-        uint32_t pipelineStateIndex = MakePipelineStateIndex( useTexture, useVertexColor, lightType ); \
+        uint32_t pipelineStateIndex = MakePipelineStateIndex( useTexture, useVertexColor, lightingModel, lightType ); \
         assert( pipelineStateIndex < MAX_PIPELINE_STATE_COUNT ); \
-        s_PipelineFunctionPtrsTable[ pipelineStateIndex ] = GetPipelineFunctionPointers< useTexture, useVertexColor, lightType >(); \
+        s_PipelineFunctionPtrsTable[ pipelineStateIndex ] = GetPipelineFunctionPointers<useTexture, useVertexColor, lightingModel, lightType>(); \
     }
 
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::eInvalid )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::eInvalid )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::eInvalid )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::eInvalid )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eUnlit, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eUnlit, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eUnlit, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eUnlit, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eUnlit, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eUnlit, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eUnlit, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eUnlit, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eLambert, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eLambert, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eLambert, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eLambert, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eLambert, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eLambert, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eLambert, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eLambert, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eBlinnPhong, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eBlinnPhong, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eBlinnPhong, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eBlinnPhong, ELightType::eDirectional )
+    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eBlinnPhong, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eBlinnPhong, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eBlinnPhong, ELightType::ePoint )
+    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eBlinnPhong, ELightType::ePoint )
 #undef SET_PIPELINE_FUNCTION_POINTERS
 }
 
@@ -1076,14 +1102,16 @@ static uint32_t ComputeVertexLayout( const SPipelineState& pipelineState, uint32
         vertexSize += sizeof( float ) * 3;
     }
 
+    const bool needLighting = pipelineState.m_LightingModel != ELightingModel::eUnlit;
+
     *normalOffset = vertexSize;
-    if ( pipelineState.m_LightType != ELightType::eInvalid )
+    if ( needLighting )
     {
         vertexSize += sizeof( float ) * 3;
     }
 
     *viewPosOffset = vertexSize;
-    if ( pipelineState.m_LightType != ELightType::eInvalid )
+    if ( needLighting && ( pipelineState.m_LightingModel == ELightingModel::eBlinnPhong || pipelineState.m_LightType == ELightType::ePoint ) )
     {
         vertexSize += sizeof( float ) * 3;
     }

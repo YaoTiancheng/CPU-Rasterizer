@@ -10,6 +10,7 @@ using namespace DirectX;
 static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 
 static uint32_t s_LightOrbitMode = 0;
+static Rasterizer::ELightingModel s_LightingModel = Rasterizer::ELightingModel::eBlinnPhong;
 static Rasterizer::ELightType s_LightType = Rasterizer::ELightType::eDirectional;
 
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
@@ -26,6 +27,10 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             else if ( wParam == 'L' )
             {
                 s_LightType = s_LightType == Rasterizer::ELightType::eDirectional ? Rasterizer::ELightType::ePoint : Rasterizer::ELightType::eDirectional;
+            }
+            else if ( wParam == 'M' )
+            {
+                s_LightingModel = (Rasterizer::ELightingModel)( ( (uint32_t)s_LightingModel + 1 ) % (uint32_t)Rasterizer::ELightingModel::eCount );
             }
         }
         break;
@@ -152,7 +157,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     XMMATRIX rotationMatrix = s_LightOrbitMode == 0 ? XMMatrixRotationRollPitchYaw( 0.f, lightOrbitAngle, 0.f ) : XMMatrixRotationRollPitchYaw( lightOrbitAngle, 0.f, 0.f );
     XMMATRIX lightWorldViewMatrix = XMMatrixMultiply( rotationMatrix, viewMatrix );
     XMVECTOR lightPosition = s_LightOrbitMode == 0 ? XMVectorSet( -3.1f, 0.f, 0.f, 0.f ) : XMVectorSet( 0.f, 3.1f, 0.f, 0.f );
-    lightPosition = s_LightType == Rasterizer::eDirectional ? 
+    lightPosition = s_LightType == Rasterizer::ELightType::eDirectional ? 
         XMVector3Normalize( XMVector3TransformNormal( lightPosition, lightWorldViewMatrix ) ) :
         XMVector3Transform( lightPosition, lightWorldViewMatrix );
     XMStoreFloat3( (XMFLOAT3*)light.m_Position.m_Data, lightPosition );
@@ -164,7 +169,7 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     material.m_Power = 40.f;
     Rasterizer::SetMaterial( material );
 
-    Rasterizer::SPipelineState pipelineState( false, false, s_LightType );
+    Rasterizer::SPipelineState pipelineState( false, false, s_LightingModel, s_LightType );
     Rasterizer::SetPipelineState( pipelineState );
 
     Rasterizer::DrawIndexed( 0, 0, triangleCount );         

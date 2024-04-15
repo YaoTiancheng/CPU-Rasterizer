@@ -313,7 +313,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
     Rasterizer::SetTexture( texture );
-    Rasterizer::SPipelineState pipelineState( true, false, Rasterizer::ELightType::eInvalid );
+    Rasterizer::SPipelineState pipelineState( true, false );
     Rasterizer::SetPipelineState( pipelineState );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
