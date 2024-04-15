@@ -9,10 +9,26 @@ using namespace DirectX;
 
 static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 
+static uint32_t s_LightOrbitMode = 0;
+static Rasterizer::ELightType s_LightType = Rasterizer::ELightType::eDirectional;
+
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
     switch ( message )
     {
+    case WM_KEYDOWN:
+        if ( ( lParam & 0x40000000 ) == 0 )
+        { 
+            if ( wParam == 'O' )
+            {
+                s_LightOrbitMode ^= 1u;
+            }
+            else if ( wParam == 'L' )
+            {
+                s_LightType = s_LightType == Rasterizer::ELightType::eDirectional ? Rasterizer::ELightType::ePoint : Rasterizer::ELightType::eDirectional;
+            }
+        }
+        break;
     case WM_DESTROY:
         PostQuitMessage( 0 );
         break;
@@ -100,10 +116,9 @@ static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SIm
     free( depthTarget->m_Bits );
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& lightOrbitAngle )
 {
-    yall += XMConvertToRadians( 0.5f );
-    pitch += XMConvertToRadians( 0.1f );
+    lightOrbitAngle += XMConvertToRadians( 0.5f );
 
     ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
     float* depthBit = (float*)depthTarget.m_Bits;
@@ -115,19 +130,18 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     Rasterizer::SMatrix matrix;
 
-    XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
-    XMMATRIX worldMatrix = XMMatrixMultiply( XMMatrixTranslation( 0.f, -1.2f, 0.f ), rotationMatrix );
+    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, -1.2f, 0.f );
     XMMATRIX viewMatrix = XMMatrixSet(
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
-        0.f, 0.f, 7.5f, 1.f );
+        0.f, 0.f, 9.0f, 1.f );
     XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
     
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
     Rasterizer::SetWorldViewTransform( matrix );
 
-    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 50.0f ), aspectRatio, 2.f, 1000.f );
+    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
 
@@ -135,8 +149,12 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     light.m_Diffuse = Rasterizer::SVector3( 1.f, 1.f, 1.f );
     light.m_Specular = Rasterizer::SVector3( 1.f, 1.f, 1.f );
     light.m_Ambient = Rasterizer::SVector3( 0.05f, 0.06f, 0.05f );
-    // Transform the light from world space to view space
-    XMVECTOR lightPosition = XMVector3TransformNormal( XMVectorSet( 0.f, 1.f, 0.f, 0.f ), viewMatrix );
+    XMMATRIX rotationMatrix = s_LightOrbitMode == 0 ? XMMatrixRotationRollPitchYaw( 0.f, lightOrbitAngle, 0.f ) : XMMatrixRotationRollPitchYaw( lightOrbitAngle, 0.f, 0.f );
+    XMMATRIX lightWorldViewMatrix = XMMatrixMultiply( rotationMatrix, viewMatrix );
+    XMVECTOR lightPosition = s_LightOrbitMode == 0 ? XMVectorSet( -3.1f, 0.f, 0.f, 0.f ) : XMVectorSet( 0.f, 3.1f, 0.f, 0.f );
+    lightPosition = s_LightType == Rasterizer::eDirectional ? 
+        XMVector3Normalize( XMVector3TransformNormal( lightPosition, lightWorldViewMatrix ) ) :
+        XMVector3Transform( lightPosition, lightWorldViewMatrix );
     XMStoreFloat3( (XMFLOAT3*)light.m_Position.m_Data, lightPosition );
     Rasterizer::SetLight( light );
 
@@ -145,6 +163,9 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     material.m_Specular = Rasterizer::SVector3( 0.5f, 0.5f, 0.5f );
     material.m_Power = 40.f;
     Rasterizer::SetMaterial( material );
+
+    Rasterizer::SPipelineState pipelineState( false, false, s_LightType );
+    Rasterizer::SetPipelineState( pipelineState );
 
     Rasterizer::DrawIndexed( 0, 0, triangleCount );         
 }
@@ -214,10 +235,8 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
-    Rasterizer::SPipelineState pipelineState( false, false, Rasterizer::ELightType::eDirectional );
-    Rasterizer::SetPipelineState( pipelineState );
 
-    float roll = 0.f, pitch = 0.f, yall = 0.f;
+    float lightOrbitAngle = 0.f;
 
     MSG msg;
     bool looping = true;
@@ -235,7 +254,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
             DispatchMessage( &msg );
         }
 
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, mesh.GetIndicesCount() / 3, aspectRatio, roll, pitch, yall );
+        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, mesh.GetIndicesCount() / 3, aspectRatio, lightOrbitAngle );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
