@@ -376,6 +376,8 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
     uint32_t stride, uint32_t texStride, uint32_t colorStride,
     uint32_t count )
 {
+    constexpr bool NeedRcpw = UseTexture || UseVertexColor || UseNormal;
+
     assert( count % SIMD_WIDTH == 0 );
 
     const float halfRasterizerWidth = s_Viewport.m_Width * s_SubpixelStep * 0.5f;
@@ -396,36 +398,9 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
         __m128 y = GatherFloat4( sizeof( float ) + pos, stride );
         __m128 z = GatherFloat4( sizeof( float ) * 2 + pos, stride );
         __m128 w = GatherFloat4( sizeof( float ) * 3 + pos, stride );
-        __m128 one = { 1.f, 1.f, 1.f, 1.f };
+        __m128 one = _mm_set1_ps( 1.f );
+        __m128 half = _mm_set1_ps( .5f );
         __m128 rcpw = _mm_div_ps( one, w );
-        __m128 half = { .5f, .5f, .5f, .5f };
-        __m128 texU, texV;
-        if ( UseTexture )
-        {
-            texU = GatherFloat4( inTex, texStride );
-            texV = GatherFloat4( sizeof( float ) + inTex, texStride );
-        }
-        __m128 colorR, colorG, colorB;
-        if ( UseVertexColor )
-        {
-            colorR = GatherFloat4( inColor, colorStride );
-            colorG = GatherFloat4( sizeof( float ) + inColor, colorStride );
-            colorB = GatherFloat4( sizeof( float ) * 2 + inColor, colorStride );
-        }
-        __m128 normalX, normalY, normalZ;
-        if ( UseNormal )
-        {
-            normalX = GatherFloat4( normal, stride );
-            normalY = GatherFloat4( sizeof( float ) + normal, stride );
-            normalZ = GatherFloat4( sizeof( float ) * 2 + normal, stride );
-        }
-        __m128 viewPosX, viewPosY, viewPosZ;
-        if ( UseViewPos )
-        {
-            viewPosX = GatherFloat4( viewPos, stride );
-            viewPosY = GatherFloat4( sizeof( float ) + viewPos, stride );
-            viewPosZ = GatherFloat4( sizeof( float ) * 2 + viewPos, stride );
-        }
 
         x = _mm_fmadd_ps( x, rcpw, one ); // x = x / w - (-1)
         x = _mm_fmadd_ps( x, vHalfRasterizerWidth, half ); // Add 0.5 for rounding
@@ -439,91 +414,69 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
 
         z = _mm_mul_ps( z, rcpw );
 
-        if ( UseTexture )
-        { 
-            texU = _mm_mul_ps( texU, rcpw );
-            texV = _mm_mul_ps( texV, rcpw );
-        }
-
-        if ( UseVertexColor )
-        {
-            colorR = _mm_mul_ps( colorR, rcpw );
-            colorG = _mm_mul_ps( colorG, rcpw );
-            colorB = _mm_mul_ps( colorB, rcpw );
-        }
-
-        if ( UseNormal )
-        {
-            normalX = _mm_mul_ps( normalX, rcpw );
-            normalY = _mm_mul_ps( normalY, rcpw );
-            normalZ = _mm_mul_ps( normalZ, rcpw );
-        }
-
-        if ( UseViewPos )
-        {
-            viewPosX = _mm_mul_ps( viewPosX, rcpw );
-            viewPosY = _mm_mul_ps( viewPosY, rcpw );
-            viewPosZ = _mm_mul_ps( viewPosZ, rcpw );
-        }
-
         ScatterInt4( xi, pos, stride );
         ScatterInt4( yi, sizeof( int32_t ) + pos, stride );
         ScatterFloat4( z, sizeof( int32_t ) * 2 + pos, stride );
 
-        constexpr bool NeedRcpw = UseTexture || UseVertexColor || UseNormal;
         if ( NeedRcpw )
         { 
             ScatterFloat4( rcpw, sizeof( int32_t ) * 2 + sizeof( float ) + pos, stride );
         }
 
-        if ( UseTexture )
-        { 
-            ScatterFloat4( texU, outTex, stride );
-            ScatterFloat4( texV, sizeof( float ) + outTex, stride );
-        }
-
-        if ( UseVertexColor )
-        {
-            ScatterFloat4( colorR, outColor, stride );
-            ScatterFloat4( colorG, sizeof( float ) + outColor, stride );
-            ScatterFloat4( colorB, sizeof( float ) * 2 + outColor, stride );
-        }
-
-        if ( UseNormal )
-        {
-            ScatterFloat4( normalX, normal, stride );
-            ScatterFloat4( normalY, sizeof( float ) + normal, stride );
-            ScatterFloat4( normalZ, sizeof( float ) * 2 + normal, stride );
-        }
-
-        if ( UseViewPos )
-        {
-            ScatterFloat4( viewPosX, viewPos, stride );
-            ScatterFloat4( viewPosY, sizeof( float ) + viewPos, stride );
-            ScatterFloat4( viewPosZ, sizeof( float ) * 2 + viewPos, stride );
-        }
-
         pos += SIMD_WIDTH * stride;
 
         if ( UseTexture )
-        { 
+        {
+            __m128 texU = GatherFloat4( inTex, texStride );
+            __m128 texV = GatherFloat4( sizeof( float ) + inTex, texStride );
+            texU = _mm_mul_ps( texU, rcpw );
+            texV = _mm_mul_ps( texV, rcpw );
+            ScatterFloat4( texU, outTex, stride );
+            ScatterFloat4( texV, sizeof( float ) + outTex, stride );
             inTex += SIMD_WIDTH * texStride;
             outTex += SIMD_WIDTH * stride;
         }
-
+        
         if ( UseVertexColor )
         {
+            __m128 colorR = GatherFloat4( inColor, colorStride );
+            __m128 colorG = GatherFloat4( sizeof( float ) + inColor, colorStride );
+            __m128 colorB = GatherFloat4( sizeof( float ) * 2 + inColor, colorStride );
+            colorR = _mm_mul_ps( colorR, rcpw );
+            colorG = _mm_mul_ps( colorG, rcpw );
+            colorB = _mm_mul_ps( colorB, rcpw );
+            ScatterFloat4( colorR, outColor, stride );
+            ScatterFloat4( colorG, sizeof( float ) + outColor, stride );
+            ScatterFloat4( colorB, sizeof( float ) * 2 + outColor, stride );
             inColor += SIMD_WIDTH * colorStride;
             outColor += SIMD_WIDTH * stride;
         }
-
+        
         if ( UseNormal )
         {
+            __m128 normalX = GatherFloat4( normal, stride );
+            __m128 normalY = GatherFloat4( sizeof( float ) + normal, stride );
+            __m128 normalZ = GatherFloat4( sizeof( float ) * 2 + normal, stride );
+            normalX = _mm_mul_ps( normalX, rcpw );
+            normalY = _mm_mul_ps( normalY, rcpw );
+            normalZ = _mm_mul_ps( normalZ, rcpw );
+            ScatterFloat4( normalX, normal, stride );
+            ScatterFloat4( normalY, sizeof( float ) + normal, stride );
+            ScatterFloat4( normalZ, sizeof( float ) * 2 + normal, stride );
             normal += SIMD_WIDTH * stride;
         }
-
+        
         if ( UseViewPos )
         {
+            __m128 viewPosX = GatherFloat4( viewPos, stride );
+            __m128 viewPosY = GatherFloat4( sizeof( float ) + viewPos, stride );
+            __m128 viewPosZ = GatherFloat4( sizeof( float ) * 2 + viewPos, stride );
+            viewPosX = _mm_mul_ps( viewPosX, rcpw );
+            viewPosY = _mm_mul_ps( viewPosY, rcpw );
+            viewPosZ = _mm_mul_ps( viewPosZ, rcpw );
+            ScatterFloat4( viewPosX, viewPos, stride );
+            ScatterFloat4( viewPosY, sizeof( float ) + viewPos, stride );
+            ScatterFloat4( viewPosZ, sizeof( float ) * 2 + viewPos, stride );
             viewPos += SIMD_WIDTH * stride;
         }
     }
