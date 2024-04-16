@@ -497,6 +497,20 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
 template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType>
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
+    int32_t a01 = v0.m_Y - v1.m_Y, b01 = v1.m_X - v0.m_X, c01 = v0.m_X * v1.m_Y - v0.m_Y * v1.m_X;
+
+    // Compute the signed area of the triangle for barycentric coordinates normalization
+    const int32_t doubleSignedArea = a01 * v2.m_X + b01 * v2.m_Y + c01; // Plug v2 into the edge function of edge01
+    // Early out if the triangle is back facing
+    if ( doubleSignedArea < 0 )
+    {
+        return;
+    }
+    const float rcpDoubleSignedArea = 1.0f / doubleSignedArea;
+
+    int32_t a12 = v1.m_Y - v2.m_Y, b12 = v2.m_X - v1.m_X, c12 = v1.m_X * v2.m_Y - v1.m_Y * v2.m_X;
+    int32_t a20 = v2.m_Y - v0.m_Y, b20 = v0.m_X - v2.m_X, c20 = v2.m_X * v0.m_Y - v2.m_Y * v0.m_X;
+
     // Calculate bounding box of the triangle and crop with the viewport
     int32_t minX = std::max( s_RasterCoordStartX, std::min( v0.m_X, std::min( v1.m_X, v2.m_X ) ) );
     int32_t minY = std::max( s_RasterCoordStartY, std::min( v0.m_Y, std::min( v1.m_Y, v2.m_Y ) ) );
@@ -509,17 +523,9 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     const int32_t imgMinX = s_Viewport.m_Left + ( minX - s_RasterCoordStartX ) / s_SubpixelStep;
     int32_t imgY = s_Viewport.m_Top + s_Viewport.m_Height - ( minY - s_RasterCoordStartY ) / s_SubpixelStep - 1; // Image axis y is flipped
 
-    int32_t a01 = v0.m_Y - v1.m_Y, b01 = v1.m_X - v0.m_X, c01 = v0.m_X * v1.m_Y - v0.m_Y * v1.m_X;
-    int32_t a12 = v1.m_Y - v2.m_Y, b12 = v2.m_X - v1.m_X, c12 = v1.m_X * v2.m_Y - v1.m_Y * v2.m_X;
-    int32_t a20 = v2.m_Y - v0.m_Y, b20 = v0.m_X - v2.m_X, c20 = v2.m_X * v0.m_Y - v2.m_Y * v0.m_X;
-
     int32_t w0_row = a12 * minX + b12 * minY + c12;
     int32_t w1_row = a20 * minX + b20 * minY + c20;
     int32_t w2_row = a01 * minX + b01 * minY + c01;
-
-    // Compute the singed area of the triangle for barycentric coordinates normalization
-    const int32_t doubleSignedArea = a01 * v2.m_X + b01 * v2.m_Y + c01; // Plug v2 into the edge function of edge01
-    const float rcpDoubleSignedArea = 1.0f / doubleSignedArea;
 
     // Pre-multiply the edge function increments by sub-pixel steps
     a01 *= s_SubpixelStep; b01 *= s_SubpixelStep;
