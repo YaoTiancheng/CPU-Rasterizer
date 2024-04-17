@@ -169,7 +169,9 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     material.m_Power = 40.f;
     Rasterizer::SetMaterial( material );
 
-    Rasterizer::SPipelineState pipelineState( false, false, s_LightingModel, s_LightType );
+    Rasterizer::SPipelineState pipelineState;
+    pipelineState.m_LightingModel = s_LightingModel;
+    pipelineState.m_LightType = s_LightType;
     Rasterizer::SetPipelineState( pipelineState );
 
     Rasterizer::DrawIndexed( 0, 0, triangleCount );         

@@ -8,7 +8,7 @@
 
 #define VERTEX_TRANSFORM_FUNCTION_TABLE_SIZE 4
 #define PERSPECTIVE_DIVISION_FUNCTION_TABLE_SIZE 16
-#define RASTERIZING_FUNCTION_TABLE_SIZE 32
+#define RASTERIZING_FUNCTION_TABLE_SIZE 64
 
 using namespace Rasterizer;
 
@@ -116,6 +116,7 @@ static SMatrix s_WorldViewProjectionMatrix =
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 0.f, 1.f,
     };
+static uint8_t s_AlphaRef = 0;
 static SMaterial s_Material = { { 1.f, 1.f, 1.f, 1.f }, { 1.f, 1.f, 1.f }, 32.f };
 static SLight s_Light;
 
@@ -499,7 +500,7 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
-template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType>
+template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType, bool EnableAlphaTest>
 static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVertex& v1, const SRasterizerVertex& v2 )
 {
     int32_t a01 = v0.m_Y - v1.m_Y, b01 = v1.m_X - v0.m_X, c01 = v0.m_X * v1.m_Y - v0.m_Y * v1.m_X;
@@ -636,7 +637,10 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                 float* dstDepth = (float*)s_DepthTarget.m_Bits + imgY * s_DepthTarget.m_Width + imgX;
                 if ( z < *dstDepth )
                 {
-                    *dstDepth = z;
+                    if ( !EnableAlphaTest )
+                    {
+                        *dstDepth = z;
+                    }
 
                     float w = 0.f;
                     if ( NeedRcpw )
@@ -666,6 +670,17 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     g *= s_Material.m_Diffuse.m_Y;
                     b *= s_Material.m_Diffuse.m_Z;
                     a *= s_Material.m_Diffuse.m_W;
+
+                    if ( EnableAlphaTest )
+                    { 
+                        const uint8_t a8 = uint8_t( a * 255.f + 0.5f );
+                        if ( a8 < s_AlphaRef )
+                        {
+                            goto RejectedStart;
+                        }
+
+                        *dstDepth = z;
+                    }
 
                     if ( NeedLighting )
                     {
@@ -767,14 +782,15 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
                     g = std::fmin( g, 1.f );
                     b = std::fmin( b, 1.f );
 
-                    uint8_t ri = uint8_t( r * 255.f + 0.5f );
-                    uint8_t gi = uint8_t( g * 255.f + 0.5f );
-                    uint8_t bi = uint8_t( b * 255.f + 0.5f );
+                    uint8_t r8 = uint8_t( r * 255.f + 0.5f );
+                    uint8_t g8 = uint8_t( g * 255.f + 0.5f );
+                    uint8_t b8 = uint8_t( b * 255.f + 0.5f );
                     uint32_t* dstColor = (uint32_t*)s_RenderTarget.m_Bits + imgY * s_RenderTarget.m_Width + imgX;
-                    *dstColor = 0xFF000000 | ri << 16 | gi << 8 | bi;
+                    *dstColor = 0xFF000000 | r8 << 16 | g8 << 8 | b8;
                 }
             }
 
+RejectedStart:
             w0 += a12;
             w1 += a20;
             w2 += a01;
@@ -840,7 +856,7 @@ static void RasterizeTriangle( const SRasterizerVertex& v0, const SRasterizerVer
     }
 }
 
-template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType, bool IsIndexed>
+template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType, bool EnableAlphaTest, bool IsIndexed>
 static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, const uint8_t* color, const uint8_t* normal, const uint8_t* viewPos, uint32_t stride, const uint32_t* indices, uint32_t trianglesCount )
 {
     constexpr bool NeedLighting = LightingModel != ELightingModel::eUnlit;
@@ -902,7 +918,7 @@ static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, con
             v1.SetViewPos( viewPos + offset1 );
             v2.SetViewPos( viewPos + offset2 );
         }
-        RasterizeTriangle<UseTexture, UseVertexColor, LightingModel, LightType>( v0, v1 ,v2 );
+        RasterizeTriangle<UseTexture, UseVertexColor, LightingModel, LightType, EnableAlphaTest>( v0, v1 ,v2 );
     }
 }
 
@@ -934,25 +950,25 @@ static uint32_t MakeFunctionIndex_PerspectiveDivision( const SPipelineState& sta
         state.m_LightingModel == ELightingModel::eBlinnPhong || state.m_LightType == ELightType::ePoint );
 }
 
-static uint32_t MakeFunctionIndex_RasterizeTriangles( bool useTexture, bool useColor, ELightingModel lightingModel, ELightType lightType )
+static uint32_t MakeFunctionIndex_RasterizeTriangles( bool useTexture, bool useColor, ELightingModel lightingModel, ELightType lightType, bool enableAlphaTest )
 {
     lightType = lightingModel != ELightingModel::eUnlit ? lightType : ELightType::eDirectional;
-    const uint32_t index = ( useTexture ? 0x1 : 0 ) | ( useColor ? 0x2 : 0 ) | ( (uint32_t)lightingModel << 2 ) | ( (uint32_t)lightType << 4 );
+    const uint32_t index = ( useTexture ? 0x1 : 0 ) | ( useColor ? 0x2 : 0 ) | ( (uint32_t)lightingModel << 2 ) | ( (uint32_t)lightType << 4 ) | ( enableAlphaTest ? 0x20 : 0 );
     assert( index < RASTERIZING_FUNCTION_TABLE_SIZE );
     return index;
 }
 
 static uint32_t MakeFunctionIndex_RasterizeTriangles( const SPipelineState& state )
 {
-    return MakeFunctionIndex_RasterizeTriangles( state.m_UseTexture, state.m_UseVertexColor, state.m_LightingModel, state.m_LightType );
+    return MakeFunctionIndex_RasterizeTriangles( state.m_UseTexture, state.m_UseVertexColor, state.m_LightingModel, state.m_LightType, state.m_EnableAlphaTest );
 }
 
-template <bool UseTexture, bool UseColor, ELightingModel LightingModel, ELightType LightType>
+template <bool UseTexture, bool UseColor, ELightingModel LightingModel, ELightType LightType, bool EnableAlphaTest>
 SRasterizingFunctionPointers GetRasterizingFunctions()
 {
     SRasterizingFunctionPointers ptrs;
-    ptrs.m_RasterizingIndexedFunction = RasterizeTriangles<UseTexture, UseColor, LightingModel, LightType, true>;
-    ptrs.m_RasterizingFunction = RasterizeTriangles<UseTexture, UseColor, LightingModel, LightType, false>;
+    ptrs.m_RasterizingIndexedFunction = RasterizeTriangles<UseTexture, UseColor, LightingModel, LightType, EnableAlphaTest, true>;
+    ptrs.m_RasterizingFunction = RasterizeTriangles<UseTexture, UseColor, LightingModel, LightType, EnableAlphaTest, false>;
     return ptrs;
 }
 
@@ -983,29 +999,50 @@ void Rasterizer::Initialize()
     SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, true, true, true )
 #undef SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE
 
-#define SET_RASTERIZING_FUNCTION_TABLE( useTexture, useColor, lightingModel, lightType ) \
-    s_RasterizingFunctionTable[ MakeFunctionIndex_RasterizeTriangles( useTexture, useColor, lightingModel, lightType ) ] = GetRasterizingFunctions<useTexture, useColor, lightingModel, lightType>();
+#define SET_RASTERIZING_FUNCTION_TABLE( useTexture, useColor, lightingModel, lightType, enableAlphaTest ) \
+    s_RasterizingFunctionTable[ MakeFunctionIndex_RasterizeTriangles( useTexture, useColor, lightingModel, lightType, enableAlphaTest ) ] = GetRasterizingFunctions<useTexture, useColor, lightingModel, lightType, enableAlphaTest>();
     
-    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eUnlit, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eUnlit, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eUnlit, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eUnlit, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::ePoint );
-    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::eDirectional );
-    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eUnlit, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eUnlit, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eUnlit, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eUnlit, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::eDirectional, false );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::ePoint, false );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eUnlit, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eUnlit, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eUnlit, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eUnlit, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::ePoint, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::eDirectional, true );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::ePoint, true );
+
 #undef SET_RASTERIZING_FUNCTION_TABLE
 }
 
@@ -1085,6 +1122,11 @@ void Rasterizer::SetLight( const SLight& light )
 void Rasterizer::SetTexture( const SImage& image )
 {
     s_Texture = image;
+}
+
+void Rasterizer::SetAlphaRef( uint8_t value )
+{
+    s_AlphaRef = value;
 }
 
 void Rasterizer::SetPipelineState( const SPipelineState& state )
