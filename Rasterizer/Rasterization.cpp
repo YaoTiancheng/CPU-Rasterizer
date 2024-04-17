@@ -5,7 +5,10 @@
 #include "MathHelper.h"
 
 #define SIMD_WIDTH 4
-#define MAX_PIPELINE_STATE_COUNT 24
+
+#define VERTEX_TRANSFORM_FUNCTION_TABLE_SIZE 4
+#define PERSPECTIVE_DIVISION_FUNCTION_TABLE_SIZE 16
+#define RASTERIZING_FUNCTION_TABLE_SIZE 32
 
 using namespace Rasterizer;
 
@@ -68,20 +71,22 @@ struct SRasterizerVertex
 
 typedef void (*VertexTransformFunctionPtr)( const uint8_t*, const uint8_t*, uint8_t*, uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
 typedef void (*PerspectiveDivisionFunctionPtr)( uint8_t*, uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
-typedef void (*RasterizeFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
+typedef void (*RasterizingFunctionPtr)( const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, const uint8_t*, uint32_t, const uint32_t*, uint32_t );
 
-struct SPipelineFunctionPointers
+struct SRasterizingFunctionPointers
 {
-    VertexTransformFunctionPtr m_VertexTransformFunction;
-    PerspectiveDivisionFunctionPtr m_PerspectiveDivisionFunction;
-    RasterizeFunctionPtr m_RasterizerFunction;
-    RasterizeFunctionPtr m_RasterizerFunctionIndexed;
+    RasterizingFunctionPtr m_RasterizingFunction;
+    RasterizingFunctionPtr m_RasterizingIndexedFunction;
 };
 
-static SPipelineFunctionPointers s_PipelineFunctionPtrsTable[ MAX_PIPELINE_STATE_COUNT ] = { 0 };
+static VertexTransformFunctionPtr s_VertexTransformFunctionTable[ VERTEX_TRANSFORM_FUNCTION_TABLE_SIZE ] = {};
+static PerspectiveDivisionFunctionPtr s_PerspectiveDivisionFunctionTable[ PERSPECTIVE_DIVISION_FUNCTION_TABLE_SIZE ] = {};
+static SRasterizingFunctionPointers s_RasterizingFunctionTable[ RASTERIZING_FUNCTION_TABLE_SIZE ] = {};
 
 static SPipelineState s_PipelineState;
-static SPipelineFunctionPointers s_PipelineFunctionPtrs;
+static VertexTransformFunctionPtr s_VertexTransformFunction = nullptr;
+static PerspectiveDivisionFunctionPtr s_PerspectiveDivisionFunction = nullptr;
+static SRasterizingFunctionPointers s_RasterizingFunctions { nullptr, nullptr };
 
 static SMatrix s_WorldViewMatrix =
     {
@@ -902,63 +907,106 @@ static void RasterizeTriangles( const uint8_t* pos, const uint8_t* texcoord, con
 }
 
 
-static uint32_t MakePipelineStateIndex( bool useTexture, bool useVertexColor, ELightingModel LightingModel, ELightType lightType )
+static uint32_t MakeFunctionIndex_VertexTransform( bool useNormal, bool useViewPos )
 {
-    return ( useTexture ? 0x1 : 0 ) | ( useVertexColor ? 0x2 : 0 ) | ( (uint32_t)lightType << 2 ) | ( (uint32_t)LightingModel << 3 );
+    useViewPos = useNormal ? useViewPos : false;
+    const uint32_t index = ( useNormal ? 0x1 : 0 ) | ( useViewPos ? 0x2 : 0 );
+    assert( index < VERTEX_TRANSFORM_FUNCTION_TABLE_SIZE );
+    return index;
 }
 
-static uint32_t MakePipelineStateIndex( const SPipelineState& state )
+static uint32_t MakeFunctionIndex_VertexTransform( const SPipelineState& state )
 {
-    return MakePipelineStateIndex( state.m_UseTexture, state.m_UseVertexColor, state.m_LightingModel, state.m_LightType );
+    return MakeFunctionIndex_VertexTransform( state.m_LightingModel != ELightingModel::eUnlit, state.m_LightingModel == ELightingModel::eBlinnPhong || state.m_LightType == ELightType::ePoint );
 }
 
-template <bool UseTexture, bool UseVertexColor, ELightingModel LightingModel, ELightType LightType>
-SPipelineFunctionPointers GetPipelineFunctionPointers()
+static uint32_t MakeFunctionIndex_PerspectiveDivision( bool useTexture, bool useColor, bool useNormal, bool useViewPos )
 {
-    constexpr bool NeedLighting = LightingModel != ELightingModel::eUnlit;
-    constexpr bool NeedViewPos = NeedLighting && ( LightingModel == ELightingModel::eBlinnPhong || LightType == ELightType::ePoint );
-    SPipelineFunctionPointers ptrs;
-    ptrs.m_VertexTransformFunction = TransformVertices<NeedLighting, NeedViewPos>;
-    ptrs.m_PerspectiveDivisionFunction = PerspectiveDivision<UseTexture, UseVertexColor, NeedLighting, NeedViewPos>;
-    ptrs.m_RasterizerFunction = RasterizeTriangles<UseTexture, UseVertexColor, LightingModel, LightType, false>;
-    ptrs.m_RasterizerFunctionIndexed = RasterizeTriangles<UseTexture, UseVertexColor, LightingModel, LightType, true>;
+    useViewPos = useNormal ? useViewPos : false;
+    const uint32_t index = ( useTexture ? 0x1 : 0 ) | ( useColor ? 0x2 : 0 ) | ( useNormal ? 0x4 : 0 ) | ( useViewPos ? 0x8 : 0 );
+    assert( index < PERSPECTIVE_DIVISION_FUNCTION_TABLE_SIZE );
+    return index;
+}
+
+static uint32_t MakeFunctionIndex_PerspectiveDivision( const SPipelineState& state )
+{
+    return MakeFunctionIndex_PerspectiveDivision( state.m_UseTexture, state.m_UseVertexColor, state.m_LightingModel != ELightingModel::eUnlit,
+        state.m_LightingModel == ELightingModel::eBlinnPhong || state.m_LightType == ELightType::ePoint );
+}
+
+static uint32_t MakeFunctionIndex_RasterizeTriangles( bool useTexture, bool useColor, ELightingModel lightingModel, ELightType lightType )
+{
+    lightType = lightingModel != ELightingModel::eUnlit ? lightType : ELightType::eDirectional;
+    const uint32_t index = ( useTexture ? 0x1 : 0 ) | ( useColor ? 0x2 : 0 ) | ( (uint32_t)lightingModel << 2 ) | ( (uint32_t)lightType << 4 );
+    assert( index < RASTERIZING_FUNCTION_TABLE_SIZE );
+    return index;
+}
+
+static uint32_t MakeFunctionIndex_RasterizeTriangles( const SPipelineState& state )
+{
+    return MakeFunctionIndex_RasterizeTriangles( state.m_UseTexture, state.m_UseVertexColor, state.m_LightingModel, state.m_LightType );
+}
+
+template <bool UseTexture, bool UseColor, ELightingModel LightingModel, ELightType LightType>
+SRasterizingFunctionPointers GetRasterizingFunctions()
+{
+    SRasterizingFunctionPointers ptrs;
+    ptrs.m_RasterizingIndexedFunction = RasterizeTriangles<UseTexture, UseColor, LightingModel, LightType, true>;
+    ptrs.m_RasterizingFunction = RasterizeTriangles<UseTexture, UseColor, LightingModel, LightType, false>;
     return ptrs;
 }
 
 void Rasterizer::Initialize()
 {
-#define SET_PIPELINE_FUNCTION_POINTERS( useTexture, useVertexColor, lightingModel, lightType ) \
-    { \
-        uint32_t pipelineStateIndex = MakePipelineStateIndex( useTexture, useVertexColor, lightingModel, lightType ); \
-        assert( pipelineStateIndex < MAX_PIPELINE_STATE_COUNT ); \
-        s_PipelineFunctionPtrsTable[ pipelineStateIndex ] = GetPipelineFunctionPointers<useTexture, useVertexColor, lightingModel, lightType>(); \
-    }
+#define SET_VERTEX_TRANSFORM_FUNCTION_TABLE( useNormal, useViewPos ) \
+    s_VertexTransformFunctionTable[ MakeFunctionIndex_VertexTransform( useNormal, useViewPos ) ] = TransformVertices<useNormal, useViewPos>;
 
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eUnlit, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eUnlit, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eUnlit, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eUnlit, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eUnlit, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eUnlit, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eUnlit, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eUnlit, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eLambert, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eLambert, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eLambert, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eLambert, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eLambert, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eLambert, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eLambert, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eLambert, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eBlinnPhong, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eBlinnPhong, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eBlinnPhong, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eBlinnPhong, ELightType::eDirectional )
-    SET_PIPELINE_FUNCTION_POINTERS( false, false, ELightingModel::eBlinnPhong, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( false, true, ELightingModel::eBlinnPhong, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, false, ELightingModel::eBlinnPhong, ELightType::ePoint )
-    SET_PIPELINE_FUNCTION_POINTERS( true, true, ELightingModel::eBlinnPhong, ELightType::ePoint )
-#undef SET_PIPELINE_FUNCTION_POINTERS
+    SET_VERTEX_TRANSFORM_FUNCTION_TABLE( false, false )
+    SET_VERTEX_TRANSFORM_FUNCTION_TABLE( true, false )
+    SET_VERTEX_TRANSFORM_FUNCTION_TABLE( true, true )
+#undef SET_VERTEX_TRANSFORM_FUNCTION_TABLE
+
+#define SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( useTexture, useColor, useNormal, useViewPos ) \
+    s_PerspectiveDivisionFunctionTable[ MakeFunctionIndex_PerspectiveDivision( useTexture, useColor, useNormal, useViewPos ) ] = PerspectiveDivision<useTexture, useColor, useNormal, useViewPos>;
+
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( false, false, false, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( false, false, true, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( false, false, true, true )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( false, true, false, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( false, true, true, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( false, true, true, true )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, false, false, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, false, true, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, false, true, true )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, true, false, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, true, true, false )
+    SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE( true, true, true, true )
+#undef SET_PERSPECTIVE_DIVISION_FUNCTION_TABLE
+
+#define SET_RASTERIZING_FUNCTION_TABLE( useTexture, useColor, lightingModel, lightType ) \
+    s_RasterizingFunctionTable[ MakeFunctionIndex_RasterizeTriangles( useTexture, useColor, lightingModel, lightType ) ] = GetRasterizingFunctions<useTexture, useColor, lightingModel, lightType>();
+    
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eUnlit, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eLambert, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( false, false, ELightingModel::eBlinnPhong, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eUnlit, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eLambert, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( false, true, ELightingModel::eBlinnPhong, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eUnlit, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eLambert, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( true, false, ELightingModel::eBlinnPhong, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eUnlit, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eLambert, ELightType::ePoint );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::eDirectional );
+    SET_RASTERIZING_FUNCTION_TABLE( true, true, ELightingModel::eBlinnPhong, ELightType::ePoint );
+#undef SET_RASTERIZING_FUNCTION_TABLE
 }
 
 void Rasterizer::SetPositionStream( const SStream& stream )
@@ -1042,7 +1090,9 @@ void Rasterizer::SetTexture( const SImage& image )
 void Rasterizer::SetPipelineState( const SPipelineState& state )
 {
     s_PipelineState = state;
-    s_PipelineFunctionPtrs = s_PipelineFunctionPtrsTable[ MakePipelineStateIndex( state ) ];
+    s_VertexTransformFunction = s_VertexTransformFunctionTable[ MakeFunctionIndex_VertexTransform( state ) ];
+    s_PerspectiveDivisionFunction = s_PerspectiveDivisionFunctionTable[ MakeFunctionIndex_PerspectiveDivision( state ) ];
+    s_RasterizingFunctions = s_RasterizingFunctionTable[ MakeFunctionIndex_RasterizeTriangles( state ) ];
 }
 
 static uint32_t ComputeVertexLayout( const SPipelineState& pipelineState, uint32_t* texcoordOffset, uint32_t* colorOffset, uint32_t* normalOffset, uint32_t* viewPosOffset )
@@ -1096,26 +1146,26 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     {
         const uint8_t* inPos = s_StreamSourcePos.m_Data + s_StreamSourcePos.m_Offset + s_StreamSourcePos.m_Stride * baseVertexLocation;
         const uint8_t* inNormal = s_StreamSourceNormal.m_Data + s_StreamSourceNormal.m_Offset + s_StreamSourceNormal.m_Stride * baseVertexLocation;
-        s_PipelineFunctionPtrs.m_VertexTransformFunction( inPos, inNormal, posStream, normalStream, viewPosStream, s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexSize, roundedUpVerticesCount );
+        s_VertexTransformFunction( inPos, inNormal, posStream, normalStream, viewPosStream, s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexSize, roundedUpVerticesCount );
     }
 
     const uint8_t* sourceTexcoordStream = s_StreamSourceTex.m_Data + s_StreamSourceTex.m_Offset + s_StreamSourceTex.m_Stride * baseVertexLocation;
     const uint8_t* sourceColorStream = s_StreamSourceColor.m_Data + s_StreamSourceColor.m_Offset + s_StreamSourceColor.m_Stride * baseVertexLocation;
     uint8_t* texcoordStream = vertices + texcoordOffset;
     uint8_t* colorStream = vertices + colorOffset;
-    s_PipelineFunctionPtrs.m_PerspectiveDivisionFunction( posStream, normalStream, viewPosStream,
+    s_PerspectiveDivisionFunction( posStream, normalStream, viewPosStream,
         sourceTexcoordStream, texcoordStream,
         sourceColorStream, colorStream,
         vertexSize, s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride,
         roundedUpVerticesCount );
 
     if ( useIndex )
-    { 
-        s_PipelineFunctionPtrs.m_RasterizerFunctionIndexed( posStream, texcoordStream, colorStream, normalStream, viewPosStream, vertexSize, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
+    {
+        s_RasterizingFunctions.m_RasterizingIndexedFunction( posStream, texcoordStream, colorStream, normalStream, viewPosStream, vertexSize, s_StreamSourceIndex + baseIndexLocation, trianglesCount );
     }
     else
     {
-        s_PipelineFunctionPtrs.m_RasterizerFunction( posStream, texcoordStream, colorStream, normalStream, viewPosStream, vertexSize, nullptr, trianglesCount );
+        s_RasterizingFunctions.m_RasterizingFunction( posStream, texcoordStream, colorStream, normalStream, viewPosStream, vertexSize, nullptr, trianglesCount );
     }
 
     free( vertices );
