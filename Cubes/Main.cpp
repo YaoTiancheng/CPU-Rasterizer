@@ -7,10 +7,27 @@ using namespace DirectX;
 
 static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 
+static const uint32_t s_TexturesCount = 2;
+static uint32_t s_CurrentTextureIndex = 0;
+static bool s_AlphaTestEnabled = false;
+
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
     switch ( message )
     {
+    case WM_KEYDOWN:
+        if ( ( lParam & 0x40000000 ) == 0 )
+        { 
+            if ( wParam == 'T' )
+            {
+                s_CurrentTextureIndex = ( s_CurrentTextureIndex + 1 ) % s_TexturesCount;
+            }
+            else if ( wParam == 'A' )
+            {
+                s_AlphaTestEnabled = s_AlphaTestEnabled != true;
+            }
+        }
+        break;
     case WM_DESTROY:
         PostQuitMessage( 0 );
         break;
@@ -58,7 +75,43 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture,
+static bool CreateTextureFromFile( IWICImagingFactory* factory, const wchar_t* filename, Rasterizer::SImage* texture )
+{
+    ComPtr<IWICBitmapDecoder> decoder;
+    ComPtr<IWICBitmapFrameDecode> frame;
+    ComPtr<IWICFormatConverter> convertedFrame;
+
+    if ( FAILED( factory->CreateDecoderFromFilename( filename, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
+    {
+        return false;
+    }
+
+    if ( FAILED( decoder->GetFrame( 0, frame.GetAddressOf() ) ) )
+    {
+        return false;
+    }
+
+    if ( FAILED( frame->GetSize( &texture->m_Width, &texture->m_Height ) ) )
+    {
+        return false;
+    }
+    
+    if ( FAILED( factory->CreateFormatConverter( convertedFrame.GetAddressOf() ) ) )
+    {
+        return false;
+    }
+
+    if ( FAILED( convertedFrame->Initialize( frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, NULL, 0.f, WICBitmapPaletteTypeCustom ) ) )
+    {
+        return false;
+    }
+
+    const uint32_t byteSize = texture->m_Width * texture->m_Height * 4;
+    texture->m_Bits = (uint8_t*)malloc( byteSize );
+    return SUCCEEDED( convertedFrame->CopyPixels( nullptr, texture->m_Width * 4, byteSize, (BYTE*)texture->m_Bits ) );
+}
+
+static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures,
     uint8_t*& vertexBuffer, Rasterizer::SStream* posStream, Rasterizer::SStream* texcoordStream, uint32_t*& indices, uint32_t* triangleCount )
 {
     struct SVertex
@@ -149,50 +202,31 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
         return false;
     }
 
-    ComPtr<IWICBitmapDecoder> decoder;
-    ComPtr<IWICBitmapFrameDecode> frame;
-    ComPtr<IWICFormatConverter> convertedFrame;
-
-    if ( FAILED( WICImagingFactory->CreateDecoderFromFilename( L"Resources/BRICK_1A.PNG", NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
+    const wchar_t* s_TextureFilenames[ s_TexturesCount ] = { L"Resources/BRICK_1A.PNG", L"Resources/foliage_21.PNG" };
+    for ( uint32_t i = 0; i < s_TexturesCount; ++i )
     {
-        return false;
+        if ( !CreateTextureFromFile( WICImagingFactory.Get(), s_TextureFilenames[ i ], &textures[ i ] ) )
+        {
+            return false;
+        }
     }
 
-    if ( FAILED( decoder->GetFrame( 0, frame.GetAddressOf() ) ) )
-    {
-        return false;
-    }
-
-    if ( FAILED( frame->GetSize( &texture->m_Width, &texture->m_Height ) ) )
-    {
-        return false;
-    }
-    
-    if ( FAILED( WICImagingFactory->CreateFormatConverter( convertedFrame.GetAddressOf() ) ) )
-    {
-        return false;
-    }
-
-    if ( FAILED( convertedFrame->Initialize( frame.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, NULL, 0.f, WICBitmapPaletteTypeCustom ) ) )
-    {
-        return false;
-    }
-
-    const uint32_t textureByteSize = texture->m_Width * texture->m_Height * 4;
-    texture->m_Bits = (uint8_t*)malloc( textureByteSize );
-    return SUCCEEDED( convertedFrame->CopyPixels( nullptr, texture->m_Width * 4, textureByteSize, (BYTE*)texture->m_Bits ) );
+    return true;
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* texture, uint8_t* vertexBuffer, uint32_t* indices )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures, uint8_t* vertexBuffer, uint32_t* indices )
 {
     free( vertexBuffer );
     free( indices );
     free( renderTarget->m_Bits );
     free( depthTarget->m_Bits );
-    free( texture->m_Bits );
+    for ( uint32_t i = 0; i < s_TexturesCount; ++i )
+    { 
+        free( textures[ i ].m_Bits );
+    }
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& texture, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
 {
     yall += XMConvertToRadians( 0.5f );
     roll += XMConvertToRadians( 0.3f );
@@ -218,6 +252,13 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
+
+    Rasterizer::SetTexture( texture );
+
+    Rasterizer::SPipelineState pipelineState( true, false );
+    pipelineState.m_EnableAlphaTest = s_AlphaTestEnabled;
+    Rasterizer::SetAlphaRef( 0x80 );
+    Rasterizer::SetPipelineState( pipelineState );
 
     XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
@@ -289,12 +330,12 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
     Rasterizer::SImage renderTarget;
     Rasterizer::SImage depthTarget;
-    Rasterizer::SImage texture;
+    Rasterizer::SImage textures[ s_TexturesCount ] = {};
     uint8_t* vertexBuffer;
     Rasterizer::SStream posStream, texcoordStream;
     uint32_t* indices;
     uint32_t triangleCount;
-    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &texture, vertexBuffer, &posStream, &texcoordStream, indices, &triangleCount ) )
+    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, textures, vertexBuffer, &posStream, &texcoordStream, indices, &triangleCount ) )
     {
         return 0;
     }
@@ -312,9 +353,6 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
-    Rasterizer::SetTexture( texture );
-    Rasterizer::SPipelineState pipelineState( true, false );
-    Rasterizer::SetPipelineState( pipelineState );
 
     float roll = 0.f, pitch = 0.f, yall = 0.f;
 
@@ -334,7 +372,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
             DispatchMessage( &msg );
         }
 
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, triangleCount, aspectRatio, roll, pitch, yall );
+        RenderImage( d2dBitmap.Get(), textures[ s_CurrentTextureIndex ], renderTarget, depthTarget, triangleCount, aspectRatio, roll, pitch, yall );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
@@ -352,7 +390,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
     }
 
-    DestroyRenderData( &renderTarget, &depthTarget, &texture, vertexBuffer, indices );
+    DestroyRenderData( &renderTarget, &depthTarget, textures, vertexBuffer, indices );
 
     DestroyWindow( hWnd );
 
