@@ -48,7 +48,11 @@ struct SAttributeStreamPtrs
         uint8_t* base;
     };
     uint8_t* z;
-    uint8_t* rcpw;
+    union
+    {
+        uint8_t* w;
+        uint8_t* rcpw;
+    };
     uint8_t* texcoord;
     uint8_t* color;
     uint8_t* normal;
@@ -59,7 +63,7 @@ using STriangleSetupInput = SAttributeStreamPtrs;
 using STriangleSetupOutput = SAttributeStreamPtrs;
 
 typedef void (*VertexTransformFunctionPtr)( const uint8_t*, const uint8_t*, uint8_t*, uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
-typedef void (*PerspectiveDivisionFunctionPtr)( uint8_t*, uint8_t*, uint8_t*, const uint8_t*, uint8_t*, const uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
+typedef void (*PerspectiveDivisionFunctionPtr)( const uint8_t*, const uint8_t*, SAttributeStreamPtrs, uint32_t, uint32_t, uint32_t, uint32_t );
 typedef void (*TriangleSetupFunctionPtr)( const STriangleSetupInput&, const uint32_t*, STriangleSetupOutput, uint32_t, uint32_t, uint32_t );
 typedef void (*RasterizingFunctionPtr)( STriangleSetupOutput, uint32_t, uint32_t );
 
@@ -362,9 +366,8 @@ static void TransformVertices(
 }
 
 template <bool UseTexture, bool UseVertexColor, bool UseNormal, bool UseViewPos>
-static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos,
-    const uint8_t* inTex, uint8_t* outTex,
-    const uint8_t* inColor, uint8_t* outColor,
+static void PerspectiveDivision( const uint8_t* inTex, const uint8_t* inColor,
+    SAttributeStreamPtrs streamPtrs,
     uint32_t stride, uint32_t texStride, uint32_t colorStride,
     uint32_t count )
 {
@@ -386,10 +389,10 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
     uint32_t batchCount = count / SIMD_WIDTH;
     for ( uint32_t i = 0; i < batchCount; ++i )
     {
-        __m128 x = GatherFloat4( pos, stride );
-        __m128 y = GatherFloat4( sizeof( float ) + pos, stride );
-        __m128 z = GatherFloat4( sizeof( float ) * 2 + pos, stride );
-        __m128 w = GatherFloat4( sizeof( float ) * 3 + pos, stride );
+        __m128 x = GatherFloat4( streamPtrs.pos, stride );
+        __m128 y = GatherFloat4( sizeof( float ) + streamPtrs.pos, stride );
+        __m128 z = GatherFloat4( streamPtrs.z, stride );
+        __m128 w = GatherFloat4( streamPtrs.w, stride );
         __m128 one = _mm_set1_ps( 1.f );
         __m128 half = _mm_set1_ps( .5f );
         __m128 rcpw = _mm_div_ps( one, w );
@@ -406,16 +409,18 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
 
         z = _mm_mul_ps( z, rcpw );
 
-        ScatterInt4( xi, pos, stride );
-        ScatterInt4( yi, sizeof( int32_t ) + pos, stride );
-        ScatterFloat4( z, sizeof( int32_t ) * 2 + pos, stride );
+        ScatterInt4( xi, streamPtrs.pos, stride );
+        ScatterInt4( yi, sizeof( int32_t ) + streamPtrs.pos, stride );
+        ScatterFloat4( z, streamPtrs.z, stride );
 
         if ( NeedRcpw )
         { 
-            ScatterFloat4( rcpw, sizeof( int32_t ) * 2 + sizeof( float ) + pos, stride );
+            ScatterFloat4( rcpw, streamPtrs.rcpw, stride );
         }
 
-        pos += SIMD_WIDTH * stride;
+        streamPtrs.pos += SIMD_WIDTH * stride;
+        streamPtrs.z += SIMD_WIDTH * stride;
+        streamPtrs.w += SIMD_WIDTH * stride;
 
         if ( UseTexture )
         {
@@ -423,10 +428,10 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
             __m128 texV = GatherFloat4( sizeof( float ) + inTex, texStride );
             texU = _mm_mul_ps( texU, rcpw );
             texV = _mm_mul_ps( texV, rcpw );
-            ScatterFloat4( texU, outTex, stride );
-            ScatterFloat4( texV, sizeof( float ) + outTex, stride );
+            ScatterFloat4( texU, streamPtrs.texcoord, stride );
+            ScatterFloat4( texV, sizeof( float ) + streamPtrs.texcoord, stride );
             inTex += SIMD_WIDTH * texStride;
-            outTex += SIMD_WIDTH * stride;
+            streamPtrs.texcoord += SIMD_WIDTH * stride;
         }
         
         if ( UseVertexColor )
@@ -437,39 +442,39 @@ static void PerspectiveDivision( uint8_t* pos, uint8_t* normal, uint8_t* viewPos
             colorR = _mm_mul_ps( colorR, rcpw );
             colorG = _mm_mul_ps( colorG, rcpw );
             colorB = _mm_mul_ps( colorB, rcpw );
-            ScatterFloat4( colorR, outColor, stride );
-            ScatterFloat4( colorG, sizeof( float ) + outColor, stride );
-            ScatterFloat4( colorB, sizeof( float ) * 2 + outColor, stride );
+            ScatterFloat4( colorR, streamPtrs.color, stride );
+            ScatterFloat4( colorG, sizeof( float ) + streamPtrs.color, stride );
+            ScatterFloat4( colorB, sizeof( float ) * 2 + streamPtrs.color, stride );
             inColor += SIMD_WIDTH * colorStride;
-            outColor += SIMD_WIDTH * stride;
+            streamPtrs.color += SIMD_WIDTH * stride;
         }
         
         if ( UseNormal )
         {
-            __m128 normalX = GatherFloat4( normal, stride );
-            __m128 normalY = GatherFloat4( sizeof( float ) + normal, stride );
-            __m128 normalZ = GatherFloat4( sizeof( float ) * 2 + normal, stride );
+            __m128 normalX = GatherFloat4( streamPtrs.normal, stride );
+            __m128 normalY = GatherFloat4( sizeof( float ) + streamPtrs.normal, stride );
+            __m128 normalZ = GatherFloat4( sizeof( float ) * 2 + streamPtrs.normal, stride );
             normalX = _mm_mul_ps( normalX, rcpw );
             normalY = _mm_mul_ps( normalY, rcpw );
             normalZ = _mm_mul_ps( normalZ, rcpw );
-            ScatterFloat4( normalX, normal, stride );
-            ScatterFloat4( normalY, sizeof( float ) + normal, stride );
-            ScatterFloat4( normalZ, sizeof( float ) * 2 + normal, stride );
-            normal += SIMD_WIDTH * stride;
+            ScatterFloat4( normalX, streamPtrs.normal, stride );
+            ScatterFloat4( normalY, sizeof( float ) + streamPtrs.normal, stride );
+            ScatterFloat4( normalZ, sizeof( float ) * 2 + streamPtrs.normal, stride );
+            streamPtrs.normal += SIMD_WIDTH * stride;
         }
         
         if ( UseViewPos )
         {
-            __m128 viewPosX = GatherFloat4( viewPos, stride );
-            __m128 viewPosY = GatherFloat4( sizeof( float ) + viewPos, stride );
-            __m128 viewPosZ = GatherFloat4( sizeof( float ) * 2 + viewPos, stride );
+            __m128 viewPosX = GatherFloat4( streamPtrs.viewPos, stride );
+            __m128 viewPosY = GatherFloat4( sizeof( float ) + streamPtrs.viewPos, stride );
+            __m128 viewPosZ = GatherFloat4( sizeof( float ) * 2 + streamPtrs.viewPos, stride );
             viewPosX = _mm_mul_ps( viewPosX, rcpw );
             viewPosY = _mm_mul_ps( viewPosY, rcpw );
             viewPosZ = _mm_mul_ps( viewPosZ, rcpw );
-            ScatterFloat4( viewPosX, viewPos, stride );
-            ScatterFloat4( viewPosY, sizeof( float ) + viewPos, stride );
-            ScatterFloat4( viewPosZ, sizeof( float ) * 2 + viewPos, stride );
-            viewPos += SIMD_WIDTH * stride;
+            ScatterFloat4( viewPosX, streamPtrs.viewPos, stride );
+            ScatterFloat4( viewPosY, sizeof( float ) + streamPtrs.viewPos, stride );
+            ScatterFloat4( viewPosZ, sizeof( float ) * 2 + streamPtrs.viewPos, stride );
+            streamPtrs.viewPos += SIMD_WIDTH * stride;
         }
     }
 }
@@ -1297,11 +1302,8 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     {
         const uint8_t* inTexcoordStream = s_StreamSourceTex.m_Data + s_StreamSourceTex.m_Offset + s_StreamSourceTex.m_Stride * baseVertexLocation;
         const uint8_t* inColorStream = s_StreamSourceColor.m_Data + s_StreamSourceColor.m_Offset + s_StreamSourceColor.m_Stride * baseVertexLocation;
-        s_PerspectiveDivisionFunction( vertexStreamPtrs.pos, vertexStreamPtrs.normal, vertexStreamPtrs.viewPos,
-            inTexcoordStream, vertexStreamPtrs.texcoord,
-            inColorStream, vertexStreamPtrs.color,
-            vertexLayout.size, s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride,
-            roundedUpVerticesCount );
+        s_PerspectiveDivisionFunction( inTexcoordStream, inColorStream, vertexStreamPtrs, vertexLayout.size,
+            s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride, roundedUpVerticesCount );
     }
 
     // Allocate intermediate triangle buffer
