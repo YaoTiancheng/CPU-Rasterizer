@@ -10,6 +10,7 @@ static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 static const uint32_t s_TexturesCount = 2;
 static uint32_t s_CurrentTextureIndex = 0;
 static bool s_AlphaTestEnabled = false;
+static Rasterizer::ECullMode s_CullMode = Rasterizer::ECullMode::eCullCW;
 
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
@@ -25,6 +26,10 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             else if ( wParam == 'A' )
             {
                 s_AlphaTestEnabled = s_AlphaTestEnabled != true;
+            }
+            else if ( wParam == 'C' )
+            {
+                s_CullMode = (Rasterizer::ECullMode)( ( (uint32_t)s_CullMode + 1 ) % 3 );
             }
         }
         break;
@@ -257,8 +262,10 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& texture, Ra
 
     Rasterizer::SPipelineState pipelineState( true, false );
     pipelineState.m_EnableAlphaTest = s_AlphaTestEnabled;
-    Rasterizer::SetAlphaRef( 0x80 );
     Rasterizer::SetPipelineState( pipelineState );
+
+    Rasterizer::SetAlphaRef( 0x80 );
+    Rasterizer::SetCullMode( s_CullMode );
 
     XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
