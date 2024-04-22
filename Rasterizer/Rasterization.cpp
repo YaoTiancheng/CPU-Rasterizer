@@ -37,7 +37,7 @@ struct STriangleBaseAttributes
     int32_t w0_row, w1_row, w2_row;
     int32_t a01, a12, a20;
     int32_t b01, b12, b20;
-    bool backfacing;
+    uint8_t faceSign;
 };
 
 struct SAttributeStreamPtrs
@@ -77,6 +77,8 @@ static VertexTransformFunctionPtr s_VertexTransformFunction = nullptr;
 static PerspectiveDivisionFunctionPtr s_PerspectiveDivisionFunction = nullptr;
 static TriangleSetupFunctionPtr s_TriangleSetupFunction = nullptr;
 static RasterizingFunctionPtr s_RasterizingFunction = nullptr;
+
+static ECullMode s_CullMode = ECullMode::eCullCW;
 
 static SMatrix s_WorldViewMatrix =
     {
@@ -510,6 +512,8 @@ static void SetupTriangles( const STriangleSetupInput& input,
 {
     constexpr bool UseRcpw = UseTexcoord || UseColor || UseNormal || UseViewPos;
 
+    int32_t cullSign = s_CullMode == ECullMode::eCullCW ? 0 : 0x80000000;
+
     for ( uint32_t i = 0; i < trianglesCount; ++i )
     {
         uint32_t i0, i1, i2;
@@ -534,11 +538,12 @@ static void SetupTriangles( const STriangleSetupInput& input,
         int32_t a01 = v0.y - v1.y, b01 = v1.x - v0.x, c01 = v0.x * v1.y - v0.y * v1.x;
         // Compute the signed area of the triangle for barycentric coordinates normalization
         const int32_t doubleSignedArea = a01 * v2.x + b01 * v2.y + c01; // Plug v2 into the edge function of edge01
-        // Early out if the triangle is back facing
-        if ( doubleSignedArea >= 0 )
+        const int32_t faceSign = doubleSignedArea & 0x80000000;
+        baseAttrs->faceSign = faceSign >> 24; // 32bit to 8bit
+        cullSign = s_CullMode == ECullMode::eNone ? faceSign : cullSign; // If cull mode is none, each triangle overrides the cull sign with its facing.
+        // Early out if the triangle facing is different than the cull facing
+        if ( ( cullSign ^ doubleSignedArea ) >= 0 )
         {
-            baseAttrs->backfacing = false;
-
             const float rcpDoubleSignedArea = 1.0f / doubleSignedArea;
 
             int32_t a12 = v1.y - v2.y, b12 = v2.x - v1.x, c12 = v1.x * v2.y - v1.y * v2.x;
@@ -579,6 +584,11 @@ static void SetupTriangles( const STriangleSetupInput& input,
             float bb20 = b20 * rcpDoubleSignedArea;
 
             // Apply top left rule
+            // The following bias computing are facing agnostic, because if the triangle is CW
+            // 1) The IsTopLeftEdge test gives opposite result (IsBottomRightEdge) and...
+            // 2) top left edge bias should be -1, which yields positive (inside) when XOR'ed with the negative face sign and...
+            // 3) non-top left edge bias should be 0, which yields negative (outside) when XOR'ed with the negative face sign
+            // which is the same as if the triangle is CCW
             const int32_t topLeftBias0 = IsTopLeftEdge( v1, v2 ) ? 0 : -1;
             const int32_t topLeftBias1 = IsTopLeftEdge( v2, v0 ) ? 0 : -1;
             const int32_t topLeftBias2 = IsTopLeftEdge( v0, v1 ) ? 0 : -1;
@@ -628,10 +638,6 @@ static void SetupTriangles( const STriangleSetupInput& input,
 
 #undef SETUP_ATTRIBUTE
         }
-        else
-        {
-            baseAttrs->backfacing = true;
-        }
 
         output.base += outputStride;
         output.z += outputStride;
@@ -650,6 +656,8 @@ static void RasterizeTriangles( STriangleSetupOutput input, uint32_t inputStride
     constexpr bool NeedViewPos = NeedLighting && ( LightingModel == ELightingModel::eBlinnPhong || LightType == ELightType::ePoint );
     constexpr bool NeedRcpw = UseTexture || UseVertexColor || NeedLighting;
 
+    int32_t cullSign = s_CullMode == ECullMode::eCullCW ? 0 : 0x80000000;
+
     for ( uint32_t i = 0; i < trianglesCount; ++i )
     {
         STriangleBaseAttributes* base = (STriangleBaseAttributes*)input.base;
@@ -661,7 +669,10 @@ static void RasterizeTriangles( STriangleSetupOutput input, uint32_t inputStride
         const int32_t a01 = base->a01, a12 = base->a12, a20 = base->a20;
         const int32_t b01 = base->b01, b12 = base->b12, b20 = base->b20;
 
-        if ( base->backfacing )
+        const int32_t faceSign = base->faceSign << 24; // 8bit to 32bit
+        cullSign = s_CullMode == ECullMode::eNone ? faceSign : cullSign; // If cull mode is none, each triangle overrides the cull sign with its facing.
+        // Early out if the triangle facing is different than the cull facing
+        if ( ( faceSign ^ cullSign ) < 0 )
         {
             goto NextTriangle;
         }
@@ -737,7 +748,7 @@ static void RasterizeTriangles( STriangleSetupOutput input, uint32_t inputStride
 
             for ( pX = minX; pX <= maxX; pX += s_SubpixelStep, imgX += 1 )
             {
-                if ( ( w0 | w1 | w2 ) >= 0 ) // counter-clockwise triangle has positive area
+                if ( ( ( faceSign ^ w0 ) | ( faceSign ^ w1 ) | ( faceSign ^ w2 ) ) >= 0 ) // "Inside" fragments yields positive
                 {
                     float* dstDepth = (float*)s_DepthTarget.m_Bits + imgY * s_DepthTarget.m_Width + imgX;
                     if ( z < *dstDepth )
@@ -1198,6 +1209,11 @@ void Rasterizer::SetTexture( const SImage& image )
 void Rasterizer::SetAlphaRef( uint8_t value )
 {
     s_AlphaRef = value;
+}
+
+void Rasterizer::SetCullMode( ECullMode mode )
+{
+    s_CullMode = mode;
 }
 
 void Rasterizer::SetPipelineState( const SPipelineState& state )

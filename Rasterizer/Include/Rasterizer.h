@@ -118,6 +118,11 @@ namespace Rasterizer
         uint32_t m_Height;
     };
 
+    enum class ECullMode : uint8_t
+    {
+        eNone, eCullCW, eCullCCW
+    };
+
     enum class ELightingModel : uint32_t
     {
         eUnlit,
@@ -190,6 +195,8 @@ namespace Rasterizer
     void SetTexture( const SImage& image );
 
     void SetAlphaRef( uint8_t value );
+
+    void SetCullMode( ECullMode mode );
 
     void SetPipelineState( const SPipelineState& state );
 
