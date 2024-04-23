@@ -13,9 +13,12 @@ static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 static HWND s_hWnd = NULL;
 static CMesh s_Mesh;
 static std::vector<CImage> s_Textures;
+static XMFLOAT3 s_MeshOffset( 0.f, 0.f, 0.f );
+static float s_CameraDistance = 0.f;
 
 static void BindMesh( const CMesh& );
 static void FreeMeshAndTextures();
+static void ComputeMeshOffsetAndCameraDistance( const CMesh&, XMFLOAT3*, float* );
 
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
@@ -46,6 +49,7 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
                 {
                     s_Mesh.FlipCoordinateHandness();
                     BindMesh( s_Mesh );
+                    ComputeMeshOffsetAndCameraDistance( s_Mesh, &s_MeshOffset, &s_CameraDistance );
                 }
             }
         }
@@ -156,28 +160,47 @@ static void FreeMeshAndTextures()
     s_Textures.clear();
 }
 
-static void UpdateCamera( float& cameraPitch, float& cameraYall )
+static void ComputeMeshOffsetAndCameraDistance( const CMesh& mesh, XMFLOAT3* meshOffset, float* cameraDistance )
 {
-    const float cameraSensitivity = XMConvertToRadians( 1.f );
+    const BoundingBox bbox = s_Mesh.ComputeBoundingBox();
+    *meshOffset = bbox.Center;
+    const float lengthDiagonal = std::sqrt( bbox.Extents.x * bbox.Extents.x + bbox.Extents.y * bbox.Extents.y + bbox.Extents.z * bbox.Extents.z );
+    *cameraDistance = lengthDiagonal * 2.2f;
+}
+
+static void UpdateCamera( float& cameraPitch, float& cameraYall, float& cameraDistance )
+{
+    const float cameraOrbitingSensitivity = XMConvertToRadians( 1.f );
     if ( GetAsyncKeyState( VK_UP ) )
     {
-        cameraPitch += cameraSensitivity;
+        cameraPitch += cameraOrbitingSensitivity;
     }
     else if ( GetAsyncKeyState( VK_DOWN ) )
     {
-        cameraPitch -= cameraSensitivity;
+        cameraPitch -= cameraOrbitingSensitivity;
     }
     if ( GetAsyncKeyState( VK_LEFT ) )
     {
-        cameraYall += cameraSensitivity;
+        cameraYall += cameraOrbitingSensitivity;
     }
     else if ( GetAsyncKeyState( VK_RIGHT ) )
     {
-        cameraYall -= cameraSensitivity;
+        cameraYall -= cameraOrbitingSensitivity;
+    }
+
+    const float cameraMoveSensitivity = 0.04f;
+    if ( GetAsyncKeyState( VK_SHIFT ) )
+    {
+        cameraDistance = std::max( 0.f, cameraDistance - cameraMoveSensitivity );
+    }
+    else if ( GetAsyncKeyState( VK_CONTROL ) )
+    {
+        cameraDistance += cameraMoveSensitivity;
     }
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const CMesh& mesh, float aspectRatio, float cameraPitch, float cameraYall )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const CMesh& mesh, float aspectRatio,
+    const XMFLOAT3& meshOffset, float cameraPitch, float cameraYall, float cameraDistance )
 {
     ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
     float* depthBit = (float*)depthTarget.m_Bits;
@@ -189,8 +212,8 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     Rasterizer::SMatrix matrix;
 
-    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, 0.f, 0.f );
-    XMMATRIX viewMatrix = XMMatrixInverse( nullptr, XMMatrixMultiply( XMMatrixTranslation( 0.f, 0.f, -7.0f ), XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) ) );
+    XMMATRIX worldMatrix = XMMatrixTranslation( -meshOffset.x, -meshOffset.y, -meshOffset.z );
+    XMMATRIX viewMatrix = XMMatrixInverse( nullptr, XMMatrixMultiply( XMMatrixTranslation( 0.f, 0.f, -cameraDistance ), XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) ) );
     XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
     
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
@@ -308,8 +331,8 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
             DispatchMessage( &msg );
         }
 
-        UpdateCamera( cameraPitch, cameraYall );
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_Mesh, aspectRatio, cameraPitch, cameraYall );
+        UpdateCamera( cameraPitch, cameraYall, s_CameraDistance );
+        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_Mesh, aspectRatio, s_MeshOffset, cameraPitch, cameraYall, s_CameraDistance );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );

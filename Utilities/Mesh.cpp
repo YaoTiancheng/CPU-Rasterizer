@@ -1,6 +1,8 @@
 #include "UtilitiesPCH.h"
 #include "Mesh.h"
 
+using namespace DirectX;
+
 // Divides two integers and rounds up
 static inline uint32_t DivideAndRoundUp( uint32_t dividend, uint32_t divisor )
 {
@@ -137,4 +139,12 @@ void CMesh::FlipCoordinateHandness()
         position = (float*)( (uint8_t*)position + m_VertexSize );
         normal = (float*)( (uint8_t*)normal + m_VertexSize );
     }
+}
+
+BoundingBox CMesh::ComputeBoundingBox() const
+{
+    BoundingBox box;
+    const float* pos = GetPosition( 0 );
+    BoundingBox::CreateFromPoints( box, m_VerticesCount, (const XMFLOAT3*)pos, m_VertexSize );
+    return box;
 }

@@ -15,3 +15,5 @@
 #include <wrl/client.h>
 #include <wincodec.h>
 #include <wincodecsdk.h>
+
+#include <DirectXCollision.h>

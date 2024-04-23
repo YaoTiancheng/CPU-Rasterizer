@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <DirectXCollision.h>
 
 class CImage;
 
@@ -99,6 +100,8 @@ public:
     uint32_t GetVertexFormat() const { return m_VertexFormat; }
 
     void FlipCoordinateHandness();
+
+    DirectX::BoundingBox ComputeBoundingBox() const;
 
     static uint32_t ComputeVertexLayout( uint32_t vertexFormat, uint32_t* positionOffset, uint32_t* normalOffset, uint32_t* colorOffset, uint32_t* texcoordOffset );
 
