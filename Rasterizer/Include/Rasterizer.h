@@ -38,6 +38,11 @@ namespace Rasterizer
             : m_X( x ), m_Y( y ), m_Z( z ), m_W( w )
         {}
 
+        explicit SVector4( float* data )
+        {
+            memcpy( m_Data, data, sizeof( m_Data ) );
+        }
+
         union
         {
             struct
@@ -55,6 +60,11 @@ namespace Rasterizer
         SVector3( float x, float y, float z )
             : m_X( x ), m_Y( y ), m_Z( z )
         {}
+
+        explicit SVector3( float* data )
+        {
+            memcpy( m_Data, data, sizeof( m_Data ) );
+        }
 
         union
         {

@@ -84,7 +84,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
 static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget,
     CMesh* mesh, Rasterizer::SStream* posStream, Rasterizer::SStream* normalStream )
 {
-    if ( !LoadMeshFromObjFile( "Resources/Teapot.obj", mesh, CMesh::EVertexFormat::ePosition | CMesh::EVertexFormat::eNormal ) )
+    if ( !LoadMeshFromObjFile( "Resources/Teapot.obj", mesh, nullptr, CMesh::EVertexFormat::ePosition | CMesh::EVertexFormat::eNormal ) )
     {
         return false;
     }
@@ -115,8 +115,7 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
 
 static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, CMesh* mesh )
 {
-    mesh->FreeVertices();
-    mesh->FreeIndices();
+    mesh->FreeAll();
     free( renderTarget->m_Bits );
     free( depthTarget->m_Bits );
 }

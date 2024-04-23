@@ -7,6 +7,21 @@ static inline uint32_t DivideAndRoundUp( uint32_t dividend, uint32_t divisor )
     return ( dividend + divisor - 1u ) / divisor;
 }
 
+SMeshMaterial SMeshMaterial::GetDefault()
+{
+    SMeshMaterial material;
+    material.m_DiffuseTexture = nullptr;
+    material.m_Diffuse[ 0 ] = 1.f;
+    material.m_Diffuse[ 1 ] = 0.f;
+    material.m_Diffuse[ 2 ] = 1.f;
+    material.m_Diffuse[ 3 ] = 1.f;
+    material.m_Specular[ 0 ] = 0.f;
+    material.m_Specular[ 1 ] = 0.f;
+    material.m_Specular[ 2 ] = 0.f;
+    material.m_Power = 1.f;
+    return material;
+}
+
 bool CMesh::AllocateVertices( uint32_t vertexFormat, uint32_t verticesCount )
 {
     assert( m_Vertices == nullptr );
@@ -60,6 +75,40 @@ void CMesh::FreeIndices()
     free( m_Indices );
     m_Indices = nullptr;
     m_IndicesCount = 0;
+}
+
+void CMesh::AllocateSections( uint32_t sectionsCount )
+{
+    assert( m_Sections == nullptr );
+    m_Sections = (SMeshSection*)malloc( sectionsCount * sizeof( SMeshSection ) );
+    m_SectionsCount = sectionsCount;
+}
+
+void CMesh::FreeSections()
+{
+    free( m_Sections );
+    m_Sections = nullptr;
+    m_SectionsCount = 0;
+}
+
+void CMesh::AllocateMaterials( )
+{
+    assert( m_Materials == nullptr );
+    m_Materials = new SMeshMaterial[ m_SectionsCount ];
+}
+
+void CMesh::FreeMaterials()
+{
+    delete[] m_Materials;
+    m_Materials = nullptr;
+}
+
+void CMesh::FreeAll()
+{
+    FreeVertices();
+    FreeIndices();
+    FreeSections();
+    FreeMaterials();
 }
 
 uint32_t CMesh::ComputeVertexLayout( uint32_t vertexFormat, uint32_t* positionOffset, uint32_t* normalOffset, uint32_t* colorOffset, uint32_t* texcoordOffset )

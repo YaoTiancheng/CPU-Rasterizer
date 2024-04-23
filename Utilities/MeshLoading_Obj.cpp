@@ -1,6 +1,8 @@
 #include "UtilitiesPCH.h"
 #include "MeshLoader.h"
 #include "Mesh.h"
+#include "Image.h"
+#include "ImageLoader.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tinyobjloader/tiny_obj_loader.h"
 
@@ -37,7 +39,7 @@ namespace std
     };
 }
 
-bool LoadMeshFromObjFile( const std::filesystem::path& filename, CMesh* mesh, uint32_t allowedVertexAttributes )
+bool LoadMeshFromObjFile( const std::filesystem::path& filename, CMesh* mesh, std::vector<CImage>* images, uint32_t allowedVertexAttributes )
 {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -45,7 +47,12 @@ bool LoadMeshFromObjFile( const std::filesystem::path& filename, CMesh* mesh, ui
     std::string err;
 
     const std::string filenameString = filename.u8string();
-    const std::string materialBaseDir = filename.parent_path().u8string();
+    std::string materialBaseDir = filename.parent_path().u8string();
+    // tinyobj needs a material path with trailing delimiter
+    if ( !materialBaseDir.empty() && materialBaseDir.back() != '/' && materialBaseDir.back() != '\\' )
+    {
+        materialBaseDir.push_back( '/' );
+    }
     if ( !tinyobj::LoadObj( &attrib, &shapes, &materials, &err, filenameString.c_str(), materialBaseDir.c_str(), true ) )
     {
         std::cerr << err.c_str();
@@ -186,6 +193,90 @@ bool LoadMeshFromObjFile( const std::filesystem::path& filename, CMesh* mesh, ui
                 }
                 index_offset += 3;
             }
+        }
+    }
+
+    // Generate sections and materials
+    std::unordered_map<std::string, CImage*> uniqueImages;
+    {
+        std::vector<SMeshSection> sections;
+        std::vector<SMeshMaterial> meshMaterials;
+        int lastMaterialId = -2; // Make sure triangles with material id -1 are assigned to a section
+        SMeshSection* newSection = nullptr;
+        for ( uint32_t triangleIndex = 0; triangleIndex < (uint32_t)materialIds.size(); ++triangleIndex )
+        {
+            const int materialId = materialIds[ triangleIndex ];
+            if ( materialId != lastMaterialId )
+            {
+                sections.emplace_back();
+                newSection = &sections.back();
+                newSection->m_IndexLocation = triangleIndex * 3;
+                newSection->m_IndicesCount = 0;
+                lastMaterialId = materialId;
+
+                meshMaterials.emplace_back( SMeshMaterial::GetDefault() );
+                SMeshMaterial& newMaterial = meshMaterials.back();
+                if ( materialId != -1 )
+                { 
+                    const tinyobj::material_t& srcMaterial = materials[ materialId ];
+                    newMaterial.m_DiffuseTextureName = srcMaterial.diffuse_texname;
+                    if ( !newMaterial.m_DiffuseTextureName.empty() )
+                    {
+                        uniqueImages.emplace( std::make_pair( newMaterial.m_DiffuseTextureName, nullptr ) );
+                    }
+                    newMaterial.m_Diffuse[ 0 ] = srcMaterial.diffuse[ 0 ];
+                    newMaterial.m_Diffuse[ 1 ] = srcMaterial.diffuse[ 1 ];
+                    newMaterial.m_Diffuse[ 2 ] = srcMaterial.diffuse[ 2 ];
+                    newMaterial.m_Diffuse[ 3 ] = 1.f;
+                    newMaterial.m_Specular[ 0 ] = srcMaterial.specular[ 0 ];
+                    newMaterial.m_Specular[ 1 ] = srcMaterial.specular[ 1 ];
+                    newMaterial.m_Specular[ 2 ] = srcMaterial.specular[ 2 ];
+                    newMaterial.m_Power = srcMaterial.shininess;
+                }
+            }
+            assert( newSection != nullptr );
+            newSection->m_IndicesCount += 3;
+        }
+
+        mesh->AllocateSections( (uint32_t)sections.size() );
+        memcpy( mesh->GetSections(), sections.data(), sizeof( SMeshSection ) * sections.size() );
+
+        mesh->AllocateMaterials();
+        for ( uint32_t i = 0; i < mesh->GetSectionsCount(); ++i )
+        {
+            mesh->GetMaterials()[ i ] = meshMaterials[ i ];
+        }
+    }
+
+    if ( images && !uniqueImages.empty() )
+    {
+        // Load all unique images into memory
+        images->reserve( images->size() + uniqueImages.size() ); // Reserve to make sure the image pointers are valid
+        for ( auto& iter : uniqueImages )
+        {
+            const std::string& imageFilename = iter.first;
+
+            std::filesystem::path filepath = imageFilename;
+            if ( filepath.is_relative() )
+            {
+                filepath = filename.parent_path() / filepath;
+            }
+
+            CImage image;
+            if ( LoadImageFromFile( filepath.u8string().c_str(), &image ) )
+            {
+                images->emplace_back( image );
+                iter.second = &images->back();
+            }
+        }
+
+        // Now assign all image pointers to materials
+        for ( uint32_t sectionIndex = 0; sectionIndex < mesh->GetSectionsCount(); ++sectionIndex )
+        {
+            SMeshMaterial& material = mesh->GetMaterials()[ sectionIndex ];
+            auto iter = uniqueImages.find( material.m_DiffuseTextureName );
+            assert( iter != uniqueImages.end() );
+            material.m_DiffuseTexture = iter->second;
         }
     }
 

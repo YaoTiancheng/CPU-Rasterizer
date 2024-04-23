@@ -1,5 +1,27 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
+
+class CImage;
+
+struct SMeshSection
+{
+    uint32_t m_IndexLocation;
+    uint32_t m_IndicesCount;
+};
+
+struct SMeshMaterial
+{
+    static SMeshMaterial GetDefault();
+
+    std::string m_DiffuseTextureName;
+    CImage* m_DiffuseTexture;
+    float m_Diffuse[ 4 ];
+    float m_Specular[ 3 ];
+    float m_Power;
+};
+
 class CMesh
 {
 public:
@@ -14,6 +36,8 @@ public:
     CMesh() 
         : m_Vertices( nullptr )
         , m_Indices( nullptr )
+        , m_Sections( nullptr )
+        , m_Materials( nullptr )
         , m_VertexFormat( 0 )
         , m_NormalOffset( 0 )
         , m_ColorOffset( 0 )
@@ -21,6 +45,7 @@ public:
         , m_VertexSize( 0 )
         , m_VerticesCount( 0 )
         , m_IndicesCount( 0 )
+        , m_SectionsCount( 0 )
     {}
 
     bool AllocateVertices( uint32_t vertexFormat, uint32_t verticesCount );
@@ -31,9 +56,23 @@ public:
 
     void FreeIndices();
 
+    void AllocateSections( uint32_t sectionsCount );
+
+    void FreeSections();
+
+    void AllocateMaterials();
+
+    void FreeMaterials();
+
+    void FreeAll();
+
     uint8_t* GetVertices() const { return m_Vertices; }
 
     uint32_t* GetIndices() const { return m_Indices; }
+
+    SMeshSection* GetSections() const { return m_Sections; }
+
+    SMeshMaterial* GetMaterials() const { return m_Materials; }
 
     float* GetPosition( uint32_t index ) const { return (float*)( m_Vertices + index * m_VertexSize ); }
 
@@ -55,6 +94,8 @@ public:
 
     uint32_t GetIndicesCount() const { return m_IndicesCount; }
 
+    uint32_t GetSectionsCount() const { return m_SectionsCount; }
+
     uint32_t GetVertexFormat() const { return m_VertexFormat; }
 
     void FlipCoordinateHandness();
@@ -64,6 +105,8 @@ public:
 private:
     uint8_t* m_Vertices;
     uint32_t* m_Indices;
+    SMeshSection* m_Sections;
+    SMeshMaterial* m_Materials;
 
     uint32_t m_VertexFormat;
     uint32_t m_NormalOffset;
@@ -73,4 +116,5 @@ private:
 
     uint32_t m_VerticesCount;
     uint32_t m_IndicesCount;
+    uint32_t m_SectionsCount;
 };

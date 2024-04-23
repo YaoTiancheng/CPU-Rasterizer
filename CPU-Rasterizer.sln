@@ -23,6 +23,12 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lighting", "Lighting\Lighti
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Utilities", "Utilities\Utilities.vcxproj", "{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ModelViewer", "ModelViewer\ModelViewer.vcxproj", "{9D486DD1-9E2C-48F3-9429-8DD8A678DD8F}"
+	ProjectSection(ProjectDependencies) = postProject
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F} = {4B62876F-D951-4DC3-A75F-CE8EC056DD1F}
+		{56A956CB-4444-4CF0-8EBF-9602DAD80C6A} = {56A956CB-4444-4CF0-8EBF-9602DAD80C6A}
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -49,6 +55,10 @@ Global
 		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Debug|x64.Build.0 = Debug|x64
 		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Release|x64.ActiveCfg = Release|x64
 		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F}.Release|x64.Build.0 = Release|x64
+		{9D486DD1-9E2C-48F3-9429-8DD8A678DD8F}.Debug|x64.ActiveCfg = Debug|x64
+		{9D486DD1-9E2C-48F3-9429-8DD8A678DD8F}.Debug|x64.Build.0 = Debug|x64
+		{9D486DD1-9E2C-48F3-9429-8DD8A678DD8F}.Release|x64.ActiveCfg = Release|x64
+		{9D486DD1-9E2C-48F3-9429-8DD8A678DD8F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
