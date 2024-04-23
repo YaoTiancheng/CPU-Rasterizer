@@ -141,6 +141,17 @@ void CMesh::FlipCoordinateHandness()
     }
 }
 
+void CMesh::FlipTexcoordsV()
+{
+    float* texcoords = GetTexcoord( 0 );
+    for ( uint32_t i = 0; i < m_VerticesCount; ++i )
+    {
+        float& texcoordV = texcoords[ 1 ];
+        texcoordV = 1.f - texcoordV;
+        texcoords = (float*)( (uint8_t*)texcoords + m_VertexSize );
+    }
+}
+
 BoundingBox CMesh::ComputeBoundingBox() const
 {
     BoundingBox box;

@@ -101,6 +101,8 @@ public:
 
     void FlipCoordinateHandness();
 
+    void FlipTexcoordsV();
+
     DirectX::BoundingBox ComputeBoundingBox() const;
 
     static uint32_t ComputeVertexLayout( uint32_t vertexFormat, uint32_t* positionOffset, uint32_t* normalOffset, uint32_t* colorOffset, uint32_t* texcoordOffset );

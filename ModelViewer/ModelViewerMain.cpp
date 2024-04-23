@@ -48,6 +48,7 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
                 if ( LoadMeshFromObjFile( filename, &s_Mesh, &s_Textures ) )
                 {
                     s_Mesh.FlipCoordinateHandness();
+                    s_Mesh.FlipTexcoordsV();
                     BindMesh( s_Mesh );
                     ComputeMeshOffsetAndCameraDistance( s_Mesh, &s_MeshOffset, &s_CameraDistance );
                 }
