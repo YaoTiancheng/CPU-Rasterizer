@@ -280,13 +280,14 @@ bool LoadSceneFronGLTFFile( const std::filesystem::path& filename, CScene* scene
         // should always render the asset using the specular-glossiness material properties." 
         // -- quote from https://kcoley.github.io/glTF/extensions/2.0/Khronos/KHR_materials_pbrSpecularGlossiness/
         auto iter = srcMaterial.extensions.find( "KHR_materials_pbrSpecularGlossiness" );
+        int32_t diffuseTexture = -1;
         if ( iter != srcMaterial.extensions.end() )
         {
             const tinygltf::Value::Object& specularGlossy = iter->second.Get<tinygltf::Value::Object>();
             newMaterial.m_Diffuse = TranslateObjectProperty<XMFLOAT4>( specularGlossy, "diffuseFactor", XMFLOAT4( 1.f, 1.f, 1.f, 1.f ) );
             newMaterial.m_Specular = TranslateObjectProperty<XMFLOAT3>( specularGlossy, "specularFactor", XMFLOAT3( 1.f, 1.f, 1.f ) );
             const tinygltf::TextureInfo diffuseTextureInfo = TranslateObjectProperty<tinygltf::TextureInfo>( specularGlossy, "diffuseTexture", tinygltf::TextureInfo() );
-            newMaterial.m_DiffuseTexture = diffuseTextureInfo.index;
+            diffuseTexture = diffuseTextureInfo.index;
         }
         else
         { 
@@ -294,11 +295,13 @@ bool LoadSceneFronGLTFFile( const std::filesystem::path& filename, CScene* scene
             newMaterial.m_Diffuse = XMFLOAT4( (float)baseColorFactor[ 3 ], (float)baseColorFactor[ 2 ], (float)baseColorFactor[ 1 ], (float)baseColorFactor[ 0 ] );
             newMaterial.m_Specular = XMFLOAT3( 0.f, 0.f, 0.f );
             newMaterial.m_Power = 1.f;
-            if ( srcMaterial.pbrMetallicRoughness.baseColorTexture.index != -1 )
-            { 
-                const tinygltf::Texture& texture = model.textures[ srcMaterial.pbrMetallicRoughness.baseColorTexture.index ];
-                newMaterial.m_DiffuseTexture = texture.source;
-            }
+            diffuseTexture = srcMaterial.pbrMetallicRoughness.baseColorTexture.index;
+        }
+
+        if ( diffuseTexture != -1 )
+        { 
+            const tinygltf::Texture& texture = model.textures[ diffuseTexture ];
+            newMaterial.m_DiffuseTexture = texture.source;
         }
 
         newMaterial.m_AlphaTest = strcmp( srcMaterial.alphaMode.c_str(), "MASK" ) == 0;
