@@ -181,6 +181,7 @@ static void CacheMeshDrawCommands( const CScene& scene, const XMFLOAT3& offset, 
             XMMATRIX parentMatrix = XMLoadFloat4x3( &node->m_LocalTransform );
             worldMatrix = XMMatrixMultiply( worldMatrix, parentMatrix );
         }
+        worldMatrix = XMMatrixMultiply( worldMatrix, XMMatrixTranslation( -offset.x, -offset.y, -offset.z ) );
 
         XMFLOAT4X3A matrix;
         XMStoreFloat4x3A( &matrix, worldMatrix );
@@ -221,8 +222,9 @@ static void CacheMeshDrawCommands( const CScene& scene, const XMFLOAT3& offset, 
 
 static void ComputeMeshOffsetAndCameraDistance( const CScene& scene, XMFLOAT3* meshOffset, float* cameraDistance )
 {
-    *meshOffset = XMFLOAT3( 0.f, 0.f, 0.f );
-    *cameraDistance = 17.f;
+    BoundingSphere sphere = scene.CalculateBoundingSphere();
+    *meshOffset = sphere.Center;
+    *cameraDistance = sphere.Radius * 2.2f;
 }
 
 static void UpdateCamera( float& cameraPitch, float& cameraYall, float& cameraDistance )

@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <DirectXMath.h>
+#include <DirectXCollision.h>
 
 struct SSceneNode
 {
@@ -64,6 +65,16 @@ public:
     void FlipCoordinateHandness();
 
     void FreeAll();
+
+    DirectX::BoundingSphere CalculateMeshSectionBoundingSphere( const SSceneMeshSection& section ) const;
+
+    DirectX::BoundingSphere CalculateMeshBoundingSphere( const SSceneMesh& mesh ) const;
+
+    DirectX::BoundingSphere CalculateMeshNodeBoundingSphere( const SSceneNode& node ) const;
+
+    DirectX::BoundingSphere CalculateBoundingSphere() const;
+
+    DirectX::XMMATRIX __vectorcall CalculateNodeWorldTransform( const SSceneNode& node ) const;
 
     std::vector<SSceneNode> m_Nodes;
     std::vector<SSceneMesh> m_Meshes;
