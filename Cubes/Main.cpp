@@ -117,7 +117,7 @@ static bool CreateTextureFromFile( IWICImagingFactory* factory, const wchar_t* f
 }
 
 static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures,
-    uint8_t*& vertexBuffer, Rasterizer::SStream* posStream, Rasterizer::SStream* texcoordStream, uint32_t*& indices, uint32_t* triangleCount )
+    uint8_t*& vertexBuffer, Rasterizer::SStream* posStream, Rasterizer::SStream* texcoordStream, uint16_t*& indices, Rasterizer::SStream* indexStream, uint32_t* triangleCount )
 {
     struct SVertex
     {
@@ -175,7 +175,7 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     texcoordStream->m_Stride = sizeof( SVertex );
     texcoordStream->m_Size = vertexBufferSize;
 
-    indices = (uint32_t*)malloc( 36 * 4 );
+    indices = (uint16_t*)malloc( 36 * 2 );
     indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
     indices[ 3 ] = 1; indices[ 4 ] = 0; indices[ 5 ] = 3;
     indices[ 6 ] = 4; indices[ 7 ] = 5; indices[ 8 ] = 6;
@@ -188,6 +188,11 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     indices[ 27 ] = 17; indices[ 28 ] = 16; indices[ 29 ] = 19;
     indices[ 30 ] = 20; indices[ 31 ] = 21; indices[ 32 ] = 22;
     indices[ 33 ] = 21; indices[ 34 ] = 20; indices[ 35 ] = 23;
+
+    indexStream->m_Data = (uint8_t*)indices;
+    indexStream->m_Offset = 0;
+    indexStream->m_Size = 36 * 2;
+    indexStream->m_Stride = 2;
 
     *triangleCount = 12;
 
@@ -219,7 +224,7 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     return true;
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures, uint8_t* vertexBuffer, uint32_t* indices )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures, uint8_t* vertexBuffer, uint16_t* indices )
 {
     free( vertexBuffer );
     free( indices );
@@ -339,10 +344,10 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SImage depthTarget;
     Rasterizer::SImage textures[ s_TexturesCount ] = {};
     uint8_t* vertexBuffer;
-    Rasterizer::SStream posStream, texcoordStream;
-    uint32_t* indices;
+    Rasterizer::SStream posStream, texcoordStream, indexStream;
+    uint16_t* indices;
     uint32_t triangleCount;
-    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, textures, vertexBuffer, &posStream, &texcoordStream, indices, &triangleCount ) )
+    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, textures, vertexBuffer, &posStream, &texcoordStream, indices, &indexStream, &triangleCount ) )
     {
         return 0;
     }
@@ -356,7 +361,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::Initialize();
     Rasterizer::SetPositionStream( posStream );
     Rasterizer::SetTexcoordStream( texcoordStream );
-    Rasterizer::SetIndexStream( indices );
+    Rasterizer::SetIndexStream( indexStream );
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );

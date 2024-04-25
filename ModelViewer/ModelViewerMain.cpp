@@ -1,24 +1,38 @@
 
 #include "ModelViewerPCH.h"
 #include "Rasterizer.h"
-#include "Mesh.h"
-#include "Image.h"
-#include "MeshLoader.h"
+#include "Scene.h"
+#include "SceneLoader.h"
 
 using namespace Microsoft::WRL;
 using namespace DirectX;
 
+struct SMeshDrawCommand
+{
+    XMFLOAT4X3 m_WorldMatrix;
+    Rasterizer::SStream m_PositionStream;
+    Rasterizer::SStream m_NormalStream;
+    Rasterizer::SStream m_TexcoordsStream;
+    Rasterizer::SStream m_ColorStream;
+    Rasterizer::SStream m_IndexStream;
+    Rasterizer::EIndexType m_IndexType;
+    uint32_t m_PrimitiveCount;
+    Rasterizer::SMaterial m_Material;
+    Rasterizer::SImage m_DiffuseTexture;
+    uint8_t m_AlphaRef;
+    bool m_AlphaTest;
+    bool m_TwoSided;
+};
+
 static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 
 static HWND s_hWnd = NULL;
-static CMesh s_Mesh;
-static std::vector<CImage> s_Textures;
-static XMFLOAT3 s_MeshOffset( 0.f, 0.f, 0.f );
+static CScene s_Scene;
+static std::vector<SMeshDrawCommand> s_CachedMeshDrawCommands;
 static float s_CameraDistance = 0.f;
 
-static void BindMesh( const CMesh& );
-static void FreeMeshAndTextures();
-static void ComputeMeshOffsetAndCameraDistance( const CMesh&, XMFLOAT3*, float* );
+static void CacheMeshDrawCommands( const CScene&, const XMFLOAT3& offset, std::vector<SMeshDrawCommand>* );
+static void ComputeMeshOffsetAndCameraDistance( const CScene&, XMFLOAT3*, float* );
 
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
@@ -35,7 +49,7 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             ofn.lpstrFile = filename;
             ofn.lpstrFile[0] = '\0';
             ofn.nMaxFile = sizeof( filename );
-            ofn.lpstrFilter = "Wavefront OBJ Files (*.obj)\0*.OBJ\0";
+            ofn.lpstrFilter = "glTF 2.0 (*.glb)\0*.glb\0";
             ofn.nFilterIndex = 1;
             ofn.lpstrFileTitle = NULL;
             ofn.nMaxFileTitle = 0;
@@ -44,13 +58,14 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
 
             if ( GetOpenFileNameA( &ofn ) == TRUE )
             {
-                FreeMeshAndTextures();
-                if ( LoadMeshFromObjFile( filename, &s_Mesh, &s_Textures ) )
+                s_Scene.FreeAll();
+                s_CachedMeshDrawCommands.clear();
+                if ( LoadSceneFronGLTFFile( filename, &s_Scene ) )
                 {
-                    s_Mesh.FlipCoordinateHandness();
-                    s_Mesh.FlipTexcoordsV();
-                    BindMesh( s_Mesh );
-                    ComputeMeshOffsetAndCameraDistance( s_Mesh, &s_MeshOffset, &s_CameraDistance );
+                    s_Scene.FlipCoordinateHandness();
+                    XMFLOAT3 offset;
+                    ComputeMeshOffsetAndCameraDistance( s_Scene, &offset, &s_CameraDistance );
+                    CacheMeshDrawCommands( s_Scene, offset, &s_CachedMeshDrawCommands );
                 }
             }
         }
@@ -102,71 +117,112 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-static void BindMesh( const CMesh& mesh )
+inline Rasterizer::SStream TranslateSceneStream( const CScene& scene, const SSceneStream& stream )
 {
-    const uint32_t vertexFormat = mesh.GetVertexFormat();
-    const uint32_t vertexSize = mesh.GetVertexSize();
-    const uint32_t vertexBufferSize = mesh.GetVertexSize() * mesh.GetVerticesCount();
-
-    {
-        Rasterizer::SStream stream;
-        stream.m_Data = mesh.GetVertices();
-        stream.m_Offset = 0;
-        stream.m_Stride = vertexSize;
-        stream.m_Size = vertexBufferSize;
-        Rasterizer::SetPositionStream( stream );
+    Rasterizer::SStream out;
+    if ( stream.m_Buffer != -1 )
+    { 
+        out.m_Data = scene.m_Buffers[ stream.m_Buffer ].m_Data;
+        out.m_Offset = stream.m_ByteOffset;
+        out.m_Stride = stream.m_ByteStride;
+        out.m_Size = stream.m_ByteSize;
     }
-    
-    if ( ( vertexFormat & CMesh::EVertexFormat::eNormal ) != 0 )
+    else
     {
-        Rasterizer::SStream stream;
-        stream.m_Data = mesh.GetVertices();
-        stream.m_Offset = mesh.GetNormalOffset();
-        stream.m_Stride = vertexSize;
-        stream.m_Size = vertexBufferSize;
-        Rasterizer::SetNormalStream( stream );
+        ZeroMemory( &out, sizeof( out ) );
     }
-
-    if ( ( vertexFormat & CMesh::EVertexFormat::eColor ) != 0 )
-    {
-        Rasterizer::SStream stream;
-        stream.m_Data = mesh.GetVertices();
-        stream.m_Offset = mesh.GetColorOffset();
-        stream.m_Stride = vertexSize;
-        stream.m_Size = vertexBufferSize;
-        Rasterizer::SetColorStream( stream );
-    }
-
-    if ( ( vertexFormat & CMesh::EVertexFormat::eTexcoord ) != 0 )
-    {
-        Rasterizer::SStream stream;
-        stream.m_Data = mesh.GetVertices();
-        stream.m_Offset = mesh.GetTexcoordOffset();
-        stream.m_Stride = vertexSize;
-        stream.m_Size = vertexBufferSize;
-        Rasterizer::SetTexcoordStream( stream );
-    }
-
-    Rasterizer::SetIndexStream( mesh.GetIndices() );
+    return out;
 }
 
-static void FreeMeshAndTextures()
+inline Rasterizer::SMaterial TranslateSceneMaterial( const CScene& scene, int32_t materialIndex )
 {
-    s_Mesh.FreeAll();
-
-    for ( CImage& texture : s_Textures )
-    {
-        texture.Free();
+    Rasterizer::SMaterial out;
+    if ( materialIndex != -1 )
+    { 
+        const SSceneMaterial& material = scene.m_Materials[ materialIndex ];
+        out.m_Diffuse = Rasterizer::SVector4( (float*)&material.m_Diffuse );
+        out.m_Specular = Rasterizer::SVector3( (float*)&material.m_Specular );
+        out.m_Power = material.m_Power;
     }
-    s_Textures.clear();
+    else
+    {
+        ZeroMemory( &out, sizeof( out ) );
+    }
+    return out;
 }
 
-static void ComputeMeshOffsetAndCameraDistance( const CMesh& mesh, XMFLOAT3* meshOffset, float* cameraDistance )
+inline Rasterizer::SImage TranslateSceneImage( const CScene& scene, int32_t imageIndex )
 {
-    const BoundingBox bbox = s_Mesh.ComputeBoundingBox();
-    *meshOffset = bbox.Center;
-    const float lengthDiagonal = std::sqrt( bbox.Extents.x * bbox.Extents.x + bbox.Extents.y * bbox.Extents.y + bbox.Extents.z * bbox.Extents.z );
-    *cameraDistance = lengthDiagonal * 2.2f;
+    Rasterizer::SImage out;
+    if ( imageIndex != -1 )
+    { 
+        const SSceneImage& image = scene.m_Images[ imageIndex ];
+        out.m_Bits = image.m_Data;
+        out.m_Width = image.m_Width;
+        out.m_Height = image.m_Height;
+    }
+    else
+    {
+        ZeroMemory( &out, sizeof( out ) );
+    }
+    return out;
+}
+
+static void CacheMeshDrawCommands( const CScene& scene, const XMFLOAT3& offset, std::vector<SMeshDrawCommand>* commands )
+{
+    for ( int32_t meshNodeIndex : scene.m_MeshNodes )
+    {
+        const SSceneNode* meshNode = &scene.m_Nodes[ meshNodeIndex ];
+        const SSceneNode* node = meshNode;
+        XMMATRIX worldMatrix = XMLoadFloat4x3( &node->m_LocalTransform );
+        while ( node->m_Parent != -1 )
+        {
+            node = &scene.m_Nodes[ node->m_Parent ];
+            XMMATRIX parentMatrix = XMLoadFloat4x3( &node->m_LocalTransform );
+            worldMatrix = XMMatrixMultiply( worldMatrix, parentMatrix );
+        }
+
+        XMFLOAT4X3A matrix;
+        XMStoreFloat4x3A( &matrix, worldMatrix );
+
+        const SSceneMesh& mesh = scene.m_Meshes[ meshNode->m_Mesh ];
+        commands->reserve( commands->size() + mesh.m_Sections.size() );
+        for ( const SSceneMeshSection& section : mesh.m_Sections )
+        {
+            commands->emplace_back();
+            SMeshDrawCommand& newCommand = commands->back();
+            newCommand.m_WorldMatrix = matrix;
+            newCommand.m_PositionStream = TranslateSceneStream( scene, section.m_PositionStream );
+            newCommand.m_NormalStream = TranslateSceneStream( scene, section.m_NormalStream );
+            newCommand.m_TexcoordsStream = TranslateSceneStream( scene, section.m_TexcoordsTream );
+            newCommand.m_ColorStream = TranslateSceneStream( scene, section.m_ColorStream );
+            newCommand.m_IndexStream = TranslateSceneStream( scene, section.m_IndexStream );
+            newCommand.m_IndexType = section.m_Is32bitIndex ? Rasterizer::EIndexType::e32bit : Rasterizer::EIndexType::e16bit;
+            newCommand.m_PrimitiveCount = section.m_PrimitivesCount;
+            newCommand.m_Material = TranslateSceneMaterial( scene, section.m_Material );
+            if ( section.m_Material != -1 )
+            { 
+                const SSceneMaterial& material = scene.m_Materials[ section.m_Material ];
+                newCommand.m_DiffuseTexture = TranslateSceneImage( scene, material.m_DiffuseTexture );
+                newCommand.m_AlphaRef = (uint8_t)( material.m_AlphaThreshold * 255.f + 0.5f );
+                newCommand.m_AlphaTest = material.m_AlphaTest;
+                newCommand.m_TwoSided = material.m_TwoSided;
+            }
+            else
+            {
+                newCommand.m_DiffuseTexture = TranslateSceneImage( scene, -1 );
+                newCommand.m_AlphaRef = 0;
+                newCommand.m_AlphaTest = false;
+                newCommand.m_TwoSided = false;
+            }
+        }
+    }
+}
+
+static void ComputeMeshOffsetAndCameraDistance( const CScene& scene, XMFLOAT3* meshOffset, float* cameraDistance )
+{
+    *meshOffset = XMFLOAT3( 0.f, 0.f, 0.f );
+    *cameraDistance = 17.f;
 }
 
 static void UpdateCamera( float& cameraPitch, float& cameraYall, float& cameraDistance )
@@ -200,8 +256,8 @@ static void UpdateCamera( float& cameraPitch, float& cameraYall, float& cameraDi
     }
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const CMesh& mesh, float aspectRatio,
-    const XMFLOAT3& meshOffset, float cameraPitch, float cameraYall, float cameraDistance )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const std::vector<SMeshDrawCommand>& meshDrawCommands, float aspectRatio,
+    float cameraPitch, float cameraYall, float cameraDistance )
 {
     ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
     float* depthBit = (float*)depthTarget.m_Bits;
@@ -213,43 +269,48 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     Rasterizer::SMatrix matrix;
 
-    XMMATRIX worldMatrix = XMMatrixTranslation( -meshOffset.x, -meshOffset.y, -meshOffset.z );
-    XMMATRIX viewMatrix = XMMatrixInverse( nullptr, XMMatrixMultiply( XMMatrixTranslation( 0.f, 0.f, -cameraDistance ), XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) ) );
-    XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
-    
-    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
-    Rasterizer::SetWorldViewTransform( matrix );
+    XMMATRIX viewMatrix = XMMatrixTranslation( 0.f, 0.f, -cameraDistance );
+    viewMatrix = XMMatrixInverse( nullptr, XMMatrixMultiply( viewMatrix, XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) ) );
 
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
 
-    for ( uint32_t sectionIndex = 0; sectionIndex < mesh.GetSectionsCount(); ++sectionIndex )
+    for ( const SMeshDrawCommand& command : meshDrawCommands )
     {
-        const SMeshSection& section = mesh.GetSections()[ sectionIndex ];
-        const SMeshMaterial& srcMaterial = mesh.GetMaterials()[ sectionIndex ];
-        Rasterizer::SMaterial material;
-        material.m_Diffuse = Rasterizer::SVector4( (float*)srcMaterial.m_Diffuse );
-        material.m_Specular = Rasterizer::SVector3( (float*)srcMaterial.m_Specular );
-        material.m_Power = srcMaterial.m_Power;
-        Rasterizer::SetMaterial( material );
+        XMMATRIX worldMatrix = XMLoadFloat4x3( &command.m_WorldMatrix );
+        XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
+        XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
+        Rasterizer::SetWorldViewTransform( matrix );
 
-        const CImage* srcTexture = srcMaterial.m_DiffuseTexture;
-        if ( srcTexture )
-        { 
-            Rasterizer::SImage texture;
-            texture.m_Bits = srcTexture->GetData();
-            texture.m_Width = srcTexture->GetWidth();
-            texture.m_Height = srcTexture->GetHeight();
-            Rasterizer::SetTexture( texture );
-        }
+        Rasterizer::SetMaterial( command.m_Material );
+        Rasterizer::SetTexture( command.m_DiffuseTexture );
+
+        Rasterizer::SetPositionStream( command.m_PositionStream );
+        Rasterizer::SetNormalStream( command.m_NormalStream );
+        Rasterizer::SetColorStream( command.m_ColorStream );
+        Rasterizer::SetTexcoordStream( command.m_TexcoordsStream );
+
+        Rasterizer::SetCullMode( command.m_TwoSided ? Rasterizer::ECullMode::eNone : Rasterizer::ECullMode::eCullCW );
+        Rasterizer::SetAlphaRef( command.m_AlphaRef );
 
         Rasterizer::SPipelineState pipelineState;
-        pipelineState.m_UseTexture = srcTexture != nullptr;
+        pipelineState.m_UseTexture = command.m_DiffuseTexture.m_Bits != nullptr;
+        pipelineState.m_UseVertexColor = command.m_ColorStream.m_Data != nullptr;
+        pipelineState.m_EnableAlphaTest = command.m_AlphaTest;
         Rasterizer::SetPipelineState( pipelineState );
 
-        Rasterizer::DrawIndexed( 0, section.m_IndexLocation, section.m_IndicesCount / 3 );
-    }    
+        if ( command.m_IndexStream.m_Data )
+        {
+            Rasterizer::SetIndexStream( command.m_IndexStream );
+            Rasterizer::SetIndexType( command.m_IndexType );
+            Rasterizer::DrawIndexed( 0, 0, command.m_PrimitiveCount );
+        }
+        else
+        {
+            Rasterizer::Draw( 0, command.m_PrimitiveCount );
+        }
+    }
 }
 
 int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
@@ -333,7 +394,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
 
         UpdateCamera( cameraPitch, cameraYall, s_CameraDistance );
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_Mesh, aspectRatio, s_MeshOffset, cameraPitch, cameraYall, s_CameraDistance );
+        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_CachedMeshDrawCommands, aspectRatio, cameraPitch, cameraYall, s_CameraDistance );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
@@ -353,7 +414,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
     free( renderTarget.m_Bits );
     free( depthTarget.m_Bits );
-    FreeMeshAndTextures();
+    s_Scene.FreeAll();
 
     DestroyWindow( s_hWnd );
 

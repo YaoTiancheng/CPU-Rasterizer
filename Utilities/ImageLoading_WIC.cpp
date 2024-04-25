@@ -3,13 +3,13 @@
 
 using namespace Microsoft::WRL;
 
-static ComPtr<IWICImagingFactory> s_Factory;
+static ComPtr<IWICImagingFactory> s_WICFactory;
 
 bool LoadImageFromFile( const char* filename, CImage* image )
 {
-    if ( !s_Factory )
+    if ( !s_WICFactory )
     {
-        if ( FAILED( CoCreateInstance( CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)s_Factory.GetAddressOf() ) ) )
+        if ( FAILED( CoCreateInstance( CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)s_WICFactory.GetAddressOf() ) ) )
         {
             return false;
         }
@@ -30,7 +30,7 @@ bool LoadImageFromFile( const char* filename, CImage* image )
         }
     }
 
-    if ( FAILED( s_Factory->CreateDecoderFromFilename( wideFilename, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
+    if ( FAILED( s_WICFactory->CreateDecoderFromFilename( wideFilename, NULL, GENERIC_READ, WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf() ) ) )
     {
         return false;
     }
@@ -46,7 +46,7 @@ bool LoadImageFromFile( const char* filename, CImage* image )
         return false;
     }
     
-    if ( FAILED( s_Factory->CreateFormatConverter( convertedFrame.GetAddressOf() ) ) )
+    if ( FAILED( s_WICFactory->CreateFormatConverter( convertedFrame.GetAddressOf() ) ) )
     {
         return false;
     }

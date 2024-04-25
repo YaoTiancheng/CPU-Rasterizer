@@ -133,6 +133,11 @@ namespace Rasterizer
         eNone, eCullCW, eCullCCW
     };
 
+    enum class EIndexType : uint8_t
+    {
+        e16bit, e32bit
+    };
+
     enum class ELightingModel : uint32_t
     {
         eUnlit,
@@ -184,7 +189,7 @@ namespace Rasterizer
 
     void SetColorStream( const SStream& stream );
 
-    void SetIndexStream( const uint32_t* indices );
+    void SetIndexStream( const SStream& stream );
 
     void SetWorldViewTransform( const SMatrix& matrix );
 
@@ -207,6 +212,8 @@ namespace Rasterizer
     void SetAlphaRef( uint8_t value );
 
     void SetCullMode( ECullMode mode );
+
+    void SetIndexType( EIndexType type );
 
     void SetPipelineState( const SPipelineState& state );
 

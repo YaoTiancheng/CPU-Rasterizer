@@ -64,7 +64,7 @@ using STriangleSetupOutput = SAttributeStreamPtrs;
 
 typedef void (*VertexTransformFunctionPtr)( const uint8_t*, const uint8_t*, uint8_t*, uint8_t*, uint8_t*, uint32_t, uint32_t, uint32_t, uint32_t );
 typedef void (*PerspectiveDivisionFunctionPtr)( const uint8_t*, const uint8_t*, SAttributeStreamPtrs, uint32_t, uint32_t, uint32_t, uint32_t );
-typedef void (*TriangleSetupFunctionPtr)( const STriangleSetupInput&, const uint32_t*, STriangleSetupOutput, uint32_t, uint32_t, uint32_t );
+typedef void (*TriangleSetupFunctionPtr)( const STriangleSetupInput&, const uint8_t*, uint32_t, STriangleSetupOutput, uint32_t, uint32_t, uint32_t );
 typedef void (*RasterizingFunctionPtr)( STriangleSetupOutput, uint32_t, uint32_t );
 
 static VertexTransformFunctionPtr s_VertexTransformFunctionTable[ VERTEX_TRANSFORM_FUNCTION_TABLE_SIZE ] = {};
@@ -122,7 +122,8 @@ static SStream s_StreamSourcePos;
 static SStream s_StreamSourceTex;
 static SStream s_StreamSourceColor;
 static SStream s_StreamSourceNormal;
-static const uint32_t* s_StreamSourceIndex = nullptr;
+static SStream s_StreamSourceIndex;
+static EIndexType s_IndexType = EIndexType::e16bit;
 
 static SImage s_RenderTarget = { 0 };
 static SImage s_DepthTarget = { 0 };
@@ -504,9 +505,15 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
+inline static uint32_t GetIndex( const uint8_t* indices, uint32_t location, uint32_t stride )
+{
+    indices += location * stride;
+    return s_IndexType == EIndexType::e16bit ? *( (uint16_t*)indices ) : *( (uint32_t*)indices ); 
+}
+
 template <bool UseTexcoord, bool UseColor, bool UseNormal, bool UseViewPos>
 static void SetupTriangles( const STriangleSetupInput& input,
-    const uint32_t* indices,
+    const uint8_t* indices, uint32_t indexStride,
     STriangleSetupOutput output,
     uint32_t inputStride, uint32_t outputStride, uint32_t trianglesCount )
 {
@@ -519,9 +526,9 @@ static void SetupTriangles( const STriangleSetupInput& input,
         uint32_t i0, i1, i2;
         if ( indices != nullptr )
         {
-            i0 = indices[ i * 3 ]; 
-            i1 = indices[ i * 3 + 1 ]; 
-            i2 = indices[ i * 3 + 2 ];
+            i0 = GetIndex( indices, i * 3, indexStride ); 
+            i1 = GetIndex( indices, i * 3 + 1, indexStride ); 
+            i2 = GetIndex( indices, i * 3 + 2, indexStride );
         }
         else
         {
@@ -1148,7 +1155,7 @@ void Rasterizer::SetColorStream( const SStream& stream )
     s_StreamSourceColor = stream;
 }
 
-void Rasterizer::SetIndexStream( const uint32_t* indices )
+void Rasterizer::SetIndexStream( const SStream& indices )
 {
     s_StreamSourceIndex = indices;
 }
@@ -1214,6 +1221,11 @@ void Rasterizer::SetAlphaRef( uint8_t value )
 void Rasterizer::SetCullMode( ECullMode mode )
 {
     s_CullMode = mode;
+}
+
+void Rasterizer::SetIndexType( EIndexType type )
+{
+    s_IndexType = type;
 }
 
 void Rasterizer::SetPipelineState( const SPipelineState& state )
@@ -1330,8 +1342,8 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
 
     // Triangle setup
     {
-        const uint32_t* indices = useIndex ? s_StreamSourceIndex + baseIndexLocation : nullptr;
-        s_TriangleSetupFunction( vertexStreamPtrs, indices, triangleStreamPtrs, vertexLayout.size, triangleLayout.size, trianglesCount );
+        const uint8_t* indices = useIndex ? s_StreamSourceIndex.m_Data + s_StreamSourceIndex.m_Offset + s_StreamSourceIndex.m_Stride * baseIndexLocation : nullptr;
+        s_TriangleSetupFunction( vertexStreamPtrs, indices, s_StreamSourceIndex.m_Stride, triangleStreamPtrs, vertexLayout.size, triangleLayout.size, trianglesCount );
     }
 
     free( vertices );

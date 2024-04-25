@@ -82,7 +82,7 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
 }
 
 static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget,
-    CMesh* mesh, Rasterizer::SStream* posStream, Rasterizer::SStream* normalStream )
+    CMesh* mesh, Rasterizer::SStream* posStream, Rasterizer::SStream* normalStream, Rasterizer::SStream* indexStream )
 {
     if ( !LoadMeshFromObjFile( "Resources/Teapot.obj", mesh, nullptr, CMesh::EVertexFormat::ePosition | CMesh::EVertexFormat::eNormal ) )
     {
@@ -101,6 +101,11 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     normalStream->m_Offset = mesh->GetNormalOffset();
     normalStream->m_Stride = mesh->GetVertexSize();
     normalStream->m_Size = mesh->GetVertexSize() * mesh->GetVerticesCount();
+
+    indexStream->m_Data = (uint8_t*)mesh->GetIndices();
+    indexStream->m_Offset = 0;
+    indexStream->m_Stride = 4;
+    indexStream->m_Size = 4 * mesh->GetIndicesCount();
 
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;
@@ -222,8 +227,8 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::SImage renderTarget;
     Rasterizer::SImage depthTarget;
     CMesh mesh;
-    Rasterizer::SStream posStream, normalStream;
-    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &mesh, &posStream, &normalStream ) )
+    Rasterizer::SStream posStream, normalStream, indexStream;
+    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &mesh, &posStream, &normalStream, &indexStream ) )
     {
         return 0;
     }
@@ -237,7 +242,8 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     Rasterizer::Initialize();
     Rasterizer::SetPositionStream( posStream );
     Rasterizer::SetNormalStream( normalStream );
-    Rasterizer::SetIndexStream( mesh.GetIndices() );
+    Rasterizer::SetIndexStream( indexStream );
+    Rasterizer::SetIndexType( Rasterizer::EIndexType::e32bit );
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
