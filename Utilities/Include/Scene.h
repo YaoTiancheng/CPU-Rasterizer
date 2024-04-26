@@ -66,11 +66,11 @@ public:
 
     void FreeAll();
 
-    DirectX::BoundingSphere CalculateMeshSectionBoundingSphere( const SSceneMeshSection& section ) const;
+    DirectX::BoundingBox CalculateMeshSectionBoundingBox( const SSceneMeshSection& section ) const;
 
-    DirectX::BoundingSphere CalculateMeshBoundingSphere( const SSceneMesh& mesh ) const;
+    DirectX::BoundingBox CalculateMeshBoundingBox( const SSceneMesh& mesh ) const;
 
-    DirectX::BoundingSphere CalculateMeshNodeBoundingSphere( const SSceneNode& node ) const;
+    DirectX::BoundingBox CalculateMeshNodeBoundingBox( const SSceneNode& node ) const;
 
     DirectX::BoundingSphere CalculateBoundingSphere() const;
 
