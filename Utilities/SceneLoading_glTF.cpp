@@ -76,9 +76,9 @@ static void GetStream( const tinygltf::Model& model, const tinygltf::Accessor& a
 {
     const tinygltf::BufferView& bufferView = model.bufferViews[ accessor.bufferView ];
     stream->m_Buffer = bufferView.buffer;
-    stream->m_ByteOffset = (uint32_t)bufferView.byteOffset;
-    stream->m_ByteSize = (uint32_t)bufferView.byteLength;
+    stream->m_ByteOffset = (uint32_t)( bufferView.byteOffset + accessor.byteOffset );
     stream->m_ByteStride = bufferView.byteStride != 0 ? (uint32_t)bufferView.byteStride : defaultStride;
+    stream->m_ByteSize = (uint32_t)( accessor.count * stream->m_ByteStride );
 }
 
 template <typename T>
@@ -292,7 +292,7 @@ bool LoadSceneFronGLTFFile( const std::filesystem::path& filename, CScene* scene
         else
         { 
             const std::vector<double>& baseColorFactor = srcMaterial.pbrMetallicRoughness.baseColorFactor;
-            newMaterial.m_Diffuse = XMFLOAT4( (float)baseColorFactor[ 3 ], (float)baseColorFactor[ 2 ], (float)baseColorFactor[ 1 ], (float)baseColorFactor[ 0 ] );
+            newMaterial.m_Diffuse = XMFLOAT4( (float)baseColorFactor[ 0 ], (float)baseColorFactor[ 1 ], (float)baseColorFactor[ 2 ], (float)baseColorFactor[ 3 ] );
             newMaterial.m_Specular = XMFLOAT3( 0.f, 0.f, 0.f );
             newMaterial.m_Power = 1.f;
             diffuseTexture = srcMaterial.pbrMetallicRoughness.baseColorTexture.index;
