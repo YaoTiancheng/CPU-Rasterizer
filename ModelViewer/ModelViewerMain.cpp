@@ -3,36 +3,20 @@
 #include "Rasterizer.h"
 #include "Scene.h"
 #include "SceneLoader.h"
+#include "SceneRendering.h"
 
 using namespace Microsoft::WRL;
 using namespace DirectX;
-
-struct SMeshDrawCommand
-{
-    XMFLOAT4X3 m_WorldMatrix;
-    Rasterizer::SStream m_PositionStream;
-    Rasterizer::SStream m_NormalStream;
-    Rasterizer::SStream m_TexcoordsStream;
-    Rasterizer::SStream m_ColorStream;
-    Rasterizer::SStream m_IndexStream;
-    Rasterizer::EIndexType m_IndexType;
-    uint32_t m_PrimitiveCount;
-    Rasterizer::SMaterial m_Material;
-    Rasterizer::SImage m_DiffuseTexture;
-    uint8_t m_AlphaRef;
-    bool m_AlphaTest;
-    bool m_TwoSided;
-};
 
 static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 
 static HWND s_hWnd = NULL;
 static CScene s_Scene;
 static std::vector<SMeshDrawCommand> s_CachedMeshDrawCommands;
+static XMFLOAT3 s_CameraLookAt = { 0.f, 0.f, 0.f };
 static float s_CameraDistance = 0.f;
 
-static void CacheMeshDrawCommands( const CScene&, const XMFLOAT3& offset, std::vector<SMeshDrawCommand>* );
-static void ComputeMeshOffsetAndCameraDistance( const CScene&, XMFLOAT3*, float* );
+static void ComputeCameraLookAtAndDistance( const CScene&, XMFLOAT3*, float* );
 
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
@@ -63,9 +47,8 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
                 if ( LoadSceneFronGLTFFile( filename, &s_Scene ) )
                 {
                     s_Scene.FlipCoordinateHandness();
-                    XMFLOAT3 offset;
-                    ComputeMeshOffsetAndCameraDistance( s_Scene, &offset, &s_CameraDistance );
-                    CacheMeshDrawCommands( s_Scene, offset, &s_CachedMeshDrawCommands );
+                    ComputeCameraLookAtAndDistance( s_Scene, &s_CameraLookAt, &s_CameraDistance );
+                    GenerateMeshDrawCommands( s_Scene, &s_CachedMeshDrawCommands );
                 }
             }
         }
@@ -117,113 +100,10 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
     return hWnd;
 }
 
-inline Rasterizer::SStream TranslateSceneStream( const CScene& scene, const SSceneStream& stream )
-{
-    Rasterizer::SStream out;
-    if ( stream.m_Buffer != -1 )
-    { 
-        out.m_Data = scene.m_Buffers[ stream.m_Buffer ].m_Data;
-        out.m_Offset = stream.m_ByteOffset;
-        out.m_Stride = stream.m_ByteStride;
-        out.m_Size = stream.m_ByteSize;
-    }
-    else
-    {
-        ZeroMemory( &out, sizeof( out ) );
-    }
-    return out;
-}
-
-inline Rasterizer::SMaterial TranslateSceneMaterial( const CScene& scene, int32_t materialIndex )
-{
-    Rasterizer::SMaterial out;
-    if ( materialIndex != -1 )
-    { 
-        const SSceneMaterial& material = scene.m_Materials[ materialIndex ];
-        out.m_Diffuse = Rasterizer::SVector4( (float*)&material.m_Diffuse );
-        out.m_Specular = Rasterizer::SVector3( (float*)&material.m_Specular );
-        out.m_Power = material.m_Power;
-    }
-    else
-    {
-        ZeroMemory( &out, sizeof( out ) );
-    }
-    return out;
-}
-
-inline Rasterizer::SImage TranslateSceneImage( const CScene& scene, int32_t imageIndex )
-{
-    Rasterizer::SImage out;
-    if ( imageIndex != -1 )
-    { 
-        const SSceneImage& image = scene.m_Images[ imageIndex ];
-        out.m_Bits = image.m_Data;
-        out.m_Width = image.m_Width;
-        out.m_Height = image.m_Height;
-    }
-    else
-    {
-        ZeroMemory( &out, sizeof( out ) );
-    }
-    return out;
-}
-
-static void CacheMeshDrawCommands( const CScene& scene, const XMFLOAT3& offset, std::vector<SMeshDrawCommand>* commands )
-{
-    for ( int32_t meshNodeIndex : scene.m_MeshNodes )
-    {
-        const SSceneNode* meshNode = &scene.m_Nodes[ meshNodeIndex ];
-        const SSceneNode* node = meshNode;
-        XMMATRIX worldMatrix = XMLoadFloat4x3( &node->m_LocalTransform );
-        while ( node->m_Parent != -1 )
-        {
-            node = &scene.m_Nodes[ node->m_Parent ];
-            XMMATRIX parentMatrix = XMLoadFloat4x3( &node->m_LocalTransform );
-            worldMatrix = XMMatrixMultiply( worldMatrix, parentMatrix );
-        }
-        worldMatrix = XMMatrixMultiply( worldMatrix, XMMatrixTranslation( -offset.x, -offset.y, -offset.z ) );
-
-        XMFLOAT4X3A matrix;
-        XMStoreFloat4x3A( &matrix, worldMatrix );
-
-        const SSceneMesh& mesh = scene.m_Meshes[ meshNode->m_Mesh ];
-        commands->reserve( commands->size() + mesh.m_Sections.size() );
-        for ( const SSceneMeshSection& section : mesh.m_Sections )
-        {
-            commands->emplace_back();
-            SMeshDrawCommand& newCommand = commands->back();
-            newCommand.m_WorldMatrix = matrix;
-            newCommand.m_PositionStream = TranslateSceneStream( scene, section.m_PositionStream );
-            newCommand.m_NormalStream = TranslateSceneStream( scene, section.m_NormalStream );
-            newCommand.m_TexcoordsStream = TranslateSceneStream( scene, section.m_TexcoordsTream );
-            newCommand.m_ColorStream = TranslateSceneStream( scene, section.m_ColorStream );
-            newCommand.m_IndexStream = TranslateSceneStream( scene, section.m_IndexStream );
-            newCommand.m_IndexType = section.m_Is32bitIndex ? Rasterizer::EIndexType::e32bit : Rasterizer::EIndexType::e16bit;
-            newCommand.m_PrimitiveCount = section.m_PrimitivesCount;
-            newCommand.m_Material = TranslateSceneMaterial( scene, section.m_Material );
-            if ( section.m_Material != -1 )
-            { 
-                const SSceneMaterial& material = scene.m_Materials[ section.m_Material ];
-                newCommand.m_DiffuseTexture = TranslateSceneImage( scene, material.m_DiffuseTexture );
-                newCommand.m_AlphaRef = (uint8_t)( material.m_AlphaThreshold * 255.f + 0.5f );
-                newCommand.m_AlphaTest = material.m_AlphaTest;
-                newCommand.m_TwoSided = material.m_TwoSided;
-            }
-            else
-            {
-                newCommand.m_DiffuseTexture = TranslateSceneImage( scene, -1 );
-                newCommand.m_AlphaRef = 0;
-                newCommand.m_AlphaTest = false;
-                newCommand.m_TwoSided = false;
-            }
-        }
-    }
-}
-
-static void ComputeMeshOffsetAndCameraDistance( const CScene& scene, XMFLOAT3* meshOffset, float* cameraDistance )
+static void ComputeCameraLookAtAndDistance( const CScene& scene, XMFLOAT3* cameraLookAt, float* cameraDistance )
 {
     BoundingSphere sphere = scene.CalculateBoundingSphere();
-    *meshOffset = sphere.Center;
+    *cameraLookAt = sphere.Center;
     *cameraDistance = sphere.Radius * 2.2f;
 }
 
@@ -258,8 +138,8 @@ static void UpdateCamera( float& cameraPitch, float& cameraYall, float& cameraDi
     }
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const std::vector<SMeshDrawCommand>& meshDrawCommands, float aspectRatio,
-    float cameraPitch, float cameraYall, float cameraDistance )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const std::vector<SMeshDrawCommand>& meshDrawCommands,
+    float aspectRatio, float cameraPitch, float cameraYall, const XMFLOAT3& cameraLookAt, float cameraDistance )
 {
     ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
     float* depthBit = (float*)depthTarget.m_Bits;
@@ -272,7 +152,9 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     Rasterizer::SMatrix matrix;
 
     XMMATRIX viewMatrix = XMMatrixTranslation( 0.f, 0.f, -cameraDistance );
-    viewMatrix = XMMatrixInverse( nullptr, XMMatrixMultiply( viewMatrix, XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) ) );
+    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) );
+    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixTranslation( cameraLookAt.x, cameraLookAt.y, cameraLookAt.z ) );
+    viewMatrix = XMMatrixInverse( nullptr, viewMatrix );
 
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
@@ -396,7 +278,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
 
         UpdateCamera( cameraPitch, cameraYall, s_CameraDistance );
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_CachedMeshDrawCommands, aspectRatio, cameraPitch, cameraYall, s_CameraDistance );
+        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_CachedMeshDrawCommands, aspectRatio, cameraPitch, cameraYall, s_CameraLookAt, s_CameraDistance );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
