@@ -337,6 +337,18 @@ bool LoadSceneFronGLTFFile( const std::filesystem::path& filename, CScene* scene
 
         if ( !srcNode.matrix.empty() )
         {
+            newNode.m_LocalTransform._11 = (float)srcNode.matrix[ 0 ];
+            newNode.m_LocalTransform._12 = (float)srcNode.matrix[ 1 ];
+            newNode.m_LocalTransform._13 = (float)srcNode.matrix[ 2 ];
+            newNode.m_LocalTransform._21 = (float)srcNode.matrix[ 4 ];
+            newNode.m_LocalTransform._22 = (float)srcNode.matrix[ 5 ];
+            newNode.m_LocalTransform._23 = (float)srcNode.matrix[ 6 ];
+            newNode.m_LocalTransform._31 = (float)srcNode.matrix[ 8 ];
+            newNode.m_LocalTransform._32 = (float)srcNode.matrix[ 9 ];
+            newNode.m_LocalTransform._33 = (float)srcNode.matrix[ 10 ];
+            newNode.m_LocalTransform._41 = (float)srcNode.matrix[ 12 ];
+            newNode.m_LocalTransform._42 = (float)srcNode.matrix[ 13 ];
+            newNode.m_LocalTransform._43 = (float)srcNode.matrix[ 14 ];
         }
         else
         {
