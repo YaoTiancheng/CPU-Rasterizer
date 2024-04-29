@@ -1,8 +1,9 @@
 
 #include "PCH.h"
 #include "Rasterizer.h"
-#include "Mesh.h"
-#include "MeshLoader.h"
+#include "Scene.h"
+#include "SceneLoader.h"
+#include "SceneRendering.h"
 
 using namespace Microsoft::WRL;
 using namespace DirectX;
@@ -82,30 +83,17 @@ static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t heigh
 }
 
 static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget,
-    CMesh* mesh, Rasterizer::SStream* posStream, Rasterizer::SStream* normalStream, Rasterizer::SStream* indexStream )
+    CScene* scene, std::vector<SMeshDrawCommand>* commands )
 {
-    if ( !LoadMeshFromObjFile( "Resources/Teapot.obj", mesh, nullptr, CMesh::EVertexFormat::ePosition | CMesh::EVertexFormat::eNormal ) )
+    if ( !LoadSceneFronGLTFFile( "Resources/Teapot.glb", scene ) )
     {
         return false;
     }
 
     // The teapot.obj is in right hand coordinate, convert it to left hand coordinate
-    mesh->FlipCoordinateHandness();
+    scene->FlipCoordinateHandness();
 
-    posStream->m_Data = mesh->GetVertices();
-    posStream->m_Offset = 0;
-    posStream->m_Stride = mesh->GetVertexSize();
-    posStream->m_Size = mesh->GetVertexSize() * mesh->GetVerticesCount();
-
-    normalStream->m_Data = mesh->GetVertices();
-    normalStream->m_Offset = mesh->GetNormalOffset();
-    normalStream->m_Stride = mesh->GetVertexSize();
-    normalStream->m_Size = mesh->GetVertexSize() * mesh->GetVerticesCount();
-
-    indexStream->m_Data = (uint8_t*)mesh->GetIndices();
-    indexStream->m_Offset = 0;
-    indexStream->m_Stride = 4;
-    indexStream->m_Size = 4 * mesh->GetIndicesCount();
+    GenerateMeshDrawCommands( *scene, commands );
 
     renderTarget->m_Width = width;
     renderTarget->m_Height = height;
@@ -118,14 +106,14 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     return true;
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, CMesh* mesh )
+static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, CScene* scene )
 {
-    mesh->FreeAll();
+    scene->FreeAll();
     free( renderTarget->m_Bits );
     free( depthTarget->m_Bits );
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& lightOrbitAngle )
+static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const std::vector<SMeshDrawCommand>& commands, float aspectRatio, float& lightOrbitAngle )
 {
     lightOrbitAngle += XMConvertToRadians( 0.5f );
 
@@ -139,20 +127,15 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     Rasterizer::SMatrix matrix;
 
-    XMMATRIX worldMatrix = XMMatrixTranslation( 0.f, -1.2f, 0.f );
-    XMMATRIX viewMatrix = XMMatrixSet(
+    const XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
+    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
+    Rasterizer::SetProjectionTransform( matrix );
+
+    const XMMATRIX viewMatrix = XMMatrixSet(
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 9.0f, 1.f );
-    XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
-    
-    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
-    Rasterizer::SetWorldViewTransform( matrix );
-
-    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
-    XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
-    Rasterizer::SetProjectionTransform( matrix );
 
     Rasterizer::SLight light;
     light.m_Diffuse = Rasterizer::SVector3( 1.f, 1.f, 1.f );
@@ -178,7 +161,30 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
     pipelineState.m_LightType = s_LightType;
     Rasterizer::SetPipelineState( pipelineState );
 
-    Rasterizer::DrawIndexed( 0, 0, triangleCount );         
+    for ( const SMeshDrawCommand& command : commands )
+    {
+        Rasterizer::SetPositionStream( command.m_PositionStream );
+        Rasterizer::SetNormalStream( command.m_NormalStream );
+        Rasterizer::SetColorStream( command.m_ColorStream );
+        Rasterizer::SetTexcoordStream( command.m_TexcoordsStream );
+        Rasterizer::SetCullMode( command.m_TwoSided ? Rasterizer::ECullMode::eNone : Rasterizer::ECullMode::eCullCW );
+
+        XMMATRIX worldMatrix = XMLoadFloat4x3( &command.m_WorldMatrix );
+        XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
+        XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
+        Rasterizer::SetWorldViewTransform( matrix );
+
+        if ( command.m_IndexStream.m_Data )
+        {
+            Rasterizer::SetIndexStream( command.m_IndexStream );
+            Rasterizer::SetIndexType( command.m_IndexType );
+            Rasterizer::DrawIndexed( 0, 0, command.m_PrimitiveCount );
+        }
+        else
+        {
+            Rasterizer::Draw( 0, command.m_PrimitiveCount );
+        }
+    }
 }
 
 int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
@@ -226,9 +232,9 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 
     Rasterizer::SImage renderTarget;
     Rasterizer::SImage depthTarget;
-    CMesh mesh;
-    Rasterizer::SStream posStream, normalStream, indexStream;
-    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &mesh, &posStream, &normalStream, &indexStream ) )
+    CScene scene;
+    std::vector<SMeshDrawCommand> meshDrawCommands;
+    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, &scene, &meshDrawCommands ) )
     {
         return 0;
     }
@@ -240,10 +246,6 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     viewport.m_Height = height;
 
     Rasterizer::Initialize();
-    Rasterizer::SetPositionStream( posStream );
-    Rasterizer::SetNormalStream( normalStream );
-    Rasterizer::SetIndexStream( indexStream );
-    Rasterizer::SetIndexType( Rasterizer::EIndexType::e32bit );
     Rasterizer::SetRenderTarget( renderTarget );
     Rasterizer::SetDepthTarget( depthTarget );
     Rasterizer::SetViewport( viewport );
@@ -266,7 +268,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
             DispatchMessage( &msg );
         }
 
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, mesh.GetIndicesCount() / 3, aspectRatio, lightOrbitAngle );
+        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, meshDrawCommands, aspectRatio, lightOrbitAngle );
 
         D2D1_RECT_U d2dRect = { 0, 0, width, height };
         HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
@@ -284,7 +286,7 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
         }
     }
 
-    DestroyRenderData( &renderTarget, &depthTarget, &mesh );
+    DestroyRenderData( &renderTarget, &depthTarget, &scene );
 
     DestroyWindow( hWnd );
 
