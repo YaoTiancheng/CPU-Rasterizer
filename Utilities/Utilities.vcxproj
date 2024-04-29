@@ -11,13 +11,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Image.cpp" />
-    <ClCompile Include="ImageLoading_WIC.cpp" />
     <ClCompile Include="SceneRendering.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneLoading_glTF.cpp" />
-    <ClCompile Include="MeshLoading_Obj.cpp" />
-    <ClCompile Include="Mesh.cpp" />
     <ClCompile Include="UtilitiesPCH.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">UtilitiesPCH.h</PrecompiledHeaderFile>
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Release|x64'">UtilitiesPCH.h</PrecompiledHeaderFile>
@@ -26,10 +22,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Include\Image.h" />
-    <ClInclude Include="Include\ImageLoader.h" />
-    <ClInclude Include="Include\Mesh.h" />
-    <ClInclude Include="Include\MeshLoader.h" />
     <ClInclude Include="Include\Scene.h" />
     <ClInclude Include="Include\SceneLoader.h" />
     <ClInclude Include="Include\SceneRendering.h" />
