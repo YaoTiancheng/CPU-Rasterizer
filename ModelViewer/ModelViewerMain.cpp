@@ -1,24 +1,34 @@
 
 #include "ModelViewerPCH.h"
 #include "Rasterizer.h"
+#include "DemoApp.h"
 #include "Scene.h"
 #include "SceneLoader.h"
 #include "SceneRendering.h"
 
-using namespace Microsoft::WRL;
 using namespace DirectX;
 
-static const wchar_t* s_WindowClassName = L"RasterizerWindow";
+class CDemoApp_ModelViewer : public CDemoApp
+{
+    using CDemoApp::CDemoApp;
 
-static HWND s_hWnd = NULL;
-static CScene s_Scene;
-static std::vector<SMeshDrawCommand> s_CachedMeshDrawCommands;
-static XMFLOAT3 s_CameraLookAt = { 0.f, 0.f, 0.f };
-static float s_CameraDistance = 0.f;
+    virtual bool OnInit() override;
+    virtual void OnDestroy() override;
+    virtual void OnUpdate() override;
+    virtual bool OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam ) override;
 
-static void ComputeCameraLookAtAndDistance( const CScene&, XMFLOAT3*, float* );
+    void ComputeCameraLookAtAndDistance();
+    void UpdateCamera();
 
-static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
+    Rasterizer::SImage m_RenderTarget, m_DepthTarget;
+    CScene m_Scene;
+    std::vector<SMeshDrawCommand> m_CachedMeshDrawCommands;
+    XMFLOAT3 m_CameraLookAt = { 0.f, 0.f, 0.f };
+    float m_CameraDistance = 0.f;
+    float m_CameraPitch = 0.f, m_CameraYall = 0.f;
+};
+
+bool CDemoApp_ModelViewer::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
     switch ( message )
     {
@@ -29,7 +39,7 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
             char filename[ MAX_PATH ];
             ZeroMemory( &ofn, sizeof( ofn ) );
             ofn.lStructSize = sizeof( ofn );
-            ofn.hwndOwner = s_hWnd;
+            ofn.hwndOwner = m_hWnd;
             ofn.lpstrFile = filename;
             ofn.lpstrFile[0] = '\0';
             ofn.nMaxFile = sizeof( filename );
@@ -42,108 +52,66 @@ static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM 
 
             if ( GetOpenFileNameA( &ofn ) == TRUE )
             {
-                s_Scene.FreeAll();
-                s_CachedMeshDrawCommands.clear();
-                if ( LoadSceneFronGLTFFile( filename, &s_Scene ) )
+                m_Scene.FreeAll();
+                m_CachedMeshDrawCommands.clear();
+                if ( LoadSceneFronGLTFFile( filename, &m_Scene ) )
                 {
-                    s_Scene.FlipCoordinateHandness();
-                    ComputeCameraLookAtAndDistance( s_Scene, &s_CameraLookAt, &s_CameraDistance );
-                    GenerateMeshDrawCommands( s_Scene, &s_CachedMeshDrawCommands );
+                    m_Scene.FlipCoordinateHandness();
+                    ComputeCameraLookAtAndDistance();
+                    GenerateMeshDrawCommands( m_Scene, &m_CachedMeshDrawCommands );
                 }
             }
         }
         break;
-    case WM_DESTROY:
-        PostQuitMessage( 0 );
-        break;
-    default:
-        return DefWindowProc( hWnd, message, wParam, lParam );
     }
-    return 0;
+    return false;
 }
 
-static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t height )
+void CDemoApp_ModelViewer::ComputeCameraLookAtAndDistance()
 {
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof( WNDCLASSEX );
-
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = WndProc;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = 0;
-    wcex.hInstance = hInstance;
-    wcex.hIcon = NULL;
-    wcex.hCursor = LoadCursor( nullptr, IDC_ARROW );
-    wcex.hbrBackground = (HBRUSH)( COLOR_WINDOW + 1 );
-    wcex.lpszMenuName = NULL;
-    wcex.lpszClassName = s_WindowClassName;
-    wcex.hIconSm = NULL;
-
-    if ( !RegisterClassExW( &wcex ) )
-    {
-        return NULL;
-    }
-
-    const DWORD windowStyle = WS_OVERLAPPEDWINDOW & ~WS_SIZEBOX & ~WS_MAXIMIZEBOX;
-
-    RECT rect;
-    rect.left = 0;
-    rect.top = 0;
-    rect.right = width;
-    rect.bottom = height;
-    AdjustWindowRect( &rect, windowStyle, FALSE );
-
-    HWND hWnd = CreateWindowW( s_WindowClassName, L"Model Viewer", windowStyle,
-        CW_USEDEFAULT, 0, rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, hInstance, nullptr );
-
-    return hWnd;
+    BoundingSphere sphere = m_Scene.CalculateBoundingSphere();
+    m_CameraLookAt = sphere.Center;
+    m_CameraDistance = sphere.Radius * 2.2f;
 }
 
-static void ComputeCameraLookAtAndDistance( const CScene& scene, XMFLOAT3* cameraLookAt, float* cameraDistance )
-{
-    BoundingSphere sphere = scene.CalculateBoundingSphere();
-    *cameraLookAt = sphere.Center;
-    *cameraDistance = sphere.Radius * 2.2f;
-}
-
-static void UpdateCamera( float& cameraPitch, float& cameraYall, float& cameraDistance )
+void CDemoApp_ModelViewer::UpdateCamera()
 {
     const float cameraOrbitingSensitivity = XMConvertToRadians( 1.f );
     if ( GetAsyncKeyState( VK_UP ) )
     {
-        cameraPitch += cameraOrbitingSensitivity;
+        m_CameraPitch += cameraOrbitingSensitivity;
     }
     else if ( GetAsyncKeyState( VK_DOWN ) )
     {
-        cameraPitch -= cameraOrbitingSensitivity;
+        m_CameraPitch -= cameraOrbitingSensitivity;
     }
     if ( GetAsyncKeyState( VK_LEFT ) )
     {
-        cameraYall += cameraOrbitingSensitivity;
+        m_CameraYall += cameraOrbitingSensitivity;
     }
     else if ( GetAsyncKeyState( VK_RIGHT ) )
     {
-        cameraYall -= cameraOrbitingSensitivity;
+        m_CameraYall -= cameraOrbitingSensitivity;
     }
 
     const float cameraMoveSensitivity = 0.04f;
     if ( GetAsyncKeyState( VK_SHIFT ) )
     {
-        cameraDistance = std::max( 0.f, cameraDistance - cameraMoveSensitivity );
+        m_CameraDistance = std::max( 0.f, m_CameraDistance - cameraMoveSensitivity );
     }
     else if ( GetAsyncKeyState( VK_CONTROL ) )
     {
-        cameraDistance += cameraMoveSensitivity;
+        m_CameraDistance += cameraMoveSensitivity;
     }
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, const std::vector<SMeshDrawCommand>& meshDrawCommands,
-    float aspectRatio, float cameraPitch, float cameraYall, const XMFLOAT3& cameraLookAt, float cameraDistance )
+void CDemoApp_ModelViewer::OnUpdate()
 {
-    ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
-    float* depthBit = (float*)depthTarget.m_Bits;
-    for ( uint32_t i = 0; i < depthTarget.m_Width * depthTarget.m_Height; ++i )
+    UpdateCamera();
+
+    ZeroMemory( m_RenderTarget.m_Bits, m_RenderTarget.m_Width * m_RenderTarget.m_Height * 4 );
+    float* depthBit = (float*)m_DepthTarget.m_Bits;
+    for ( uint32_t i = 0; i < m_DepthTarget.m_Width * m_DepthTarget.m_Height; ++i )
     {
         *depthBit = 1.f;
         ++depthBit;
@@ -151,16 +119,17 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
 
     Rasterizer::SMatrix matrix;
 
-    XMMATRIX viewMatrix = XMMatrixTranslation( 0.f, 0.f, -cameraDistance );
-    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixRotationRollPitchYaw( cameraPitch, cameraYall, 0.f ) );
-    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixTranslation( cameraLookAt.x, cameraLookAt.y, cameraLookAt.z ) );
+    XMMATRIX viewMatrix = XMMatrixTranslation( 0.f, 0.f, -m_CameraDistance );
+    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixRotationRollPitchYaw( m_CameraPitch, m_CameraYall, 0.f ) );
+    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixTranslation( m_CameraLookAt.x, m_CameraLookAt.y, m_CameraLookAt.z ) );
     viewMatrix = XMMatrixInverse( nullptr, viewMatrix );
 
+    const float aspectRatio = (float)m_RenderTarget.m_Width / m_RenderTarget.m_Height;
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
 
-    for ( const SMeshDrawCommand& command : meshDrawCommands )
+    for ( const SMeshDrawCommand& command : m_CachedMeshDrawCommands )
     {
         XMMATRIX worldMatrix = XMLoadFloat4x3( &command.m_WorldMatrix );
         XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
@@ -195,58 +164,21 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& renderTarge
             Rasterizer::Draw( 0, command.m_PrimitiveCount );
         }
     }
+
+    CopyToSwapChain( m_RenderTarget );
 }
 
-int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
+bool CDemoApp_ModelViewer::OnInit()
 {
-    UNREFERENCED_PARAMETER( hPrevInstance );
-    UNREFERENCED_PARAMETER( lpCmdLine );
+    uint32_t width, height;
+    GetSwapChainSize( &width, &height );
 
-    const uint32_t width = 800;
-    const uint32_t height = 600;
-    const float aspectRatio = (float)width / height;
-
-    s_hWnd = CreateAppWindow( hInstance, width, height );
-    if ( !s_hWnd )
-    {
-        return 0;
-    }
-
-    ComPtr<ID2D1Factory> d2dFactory;
-    ComPtr<ID2D1HwndRenderTarget> d2dRenderTarget;
-    ComPtr<ID2D1Bitmap> d2dBitmap;
-
-    HRESULT hr = S_OK;
-    hr = D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dFactory.GetAddressOf() );
-    if ( FAILED( hr ) )
-    {
-        return 0;
-    }
-
-    const D2D1_SIZE_U d2dSize = { width, height };
-
-    hr = d2dFactory->CreateHwndRenderTarget( D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties( s_hWnd, d2dSize ), d2dRenderTarget.GetAddressOf() );
-    if ( FAILED( hr ) )
-    {
-        return 0;
-    }
-
-    hr = d2dRenderTarget->CreateBitmap( d2dSize, D2D1::BitmapProperties( D2D1::PixelFormat( DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE ) ), d2dBitmap.GetAddressOf() );
-    if ( FAILED( hr ) )
-    {
-        return 0;
-    }
-
-    ShowWindow( s_hWnd, nCmdShow );
-    UpdateWindow( s_hWnd );
-
-    Rasterizer::SImage renderTarget, depthTarget;
-    renderTarget.m_Width = width;
-    renderTarget.m_Height = height;
-    renderTarget.m_Bits = (uint8_t*)malloc( width * height * 4 );
-    depthTarget.m_Width = width;
-    depthTarget.m_Height = height;
-    depthTarget.m_Bits = (uint8_t*)malloc( width * height * 4 );
+    m_RenderTarget.m_Width = width;
+    m_RenderTarget.m_Height = height;
+    m_RenderTarget.m_Bits = (uint8_t*)malloc( width * height * 4 );
+    m_DepthTarget.m_Width = width;
+    m_DepthTarget.m_Height = height;
+    m_DepthTarget.m_Bits = (uint8_t*)malloc( width * height * 4 );
 
     Rasterizer::SViewport viewport;
     viewport.m_Left = 0;
@@ -255,55 +187,30 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     viewport.m_Height = height;
 
     Rasterizer::Initialize();
-    Rasterizer::SetRenderTarget( renderTarget );
-    Rasterizer::SetDepthTarget( depthTarget );
+    Rasterizer::SetRenderTarget( m_RenderTarget );
+    Rasterizer::SetDepthTarget( m_DepthTarget );
     Rasterizer::SetViewport( viewport );
 
-    float cameraPitch = 0.f, cameraYall = 0.f;
-
-    MSG msg;
-    bool looping = true;
-    while ( looping )
-    { 
-        while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
-        {
-            if ( msg.message == WM_QUIT )
-            {
-                looping = false;
-                break;
-            }
-            
-            TranslateMessage( &msg );
-            DispatchMessage( &msg );
-        }
-
-        UpdateCamera( cameraPitch, cameraYall, s_CameraDistance );
-        RenderImage( d2dBitmap.Get(), renderTarget, depthTarget, s_CachedMeshDrawCommands, aspectRatio, cameraPitch, cameraYall, s_CameraLookAt, s_CameraDistance );
-
-        D2D1_RECT_U d2dRect = { 0, 0, width, height };
-        HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
-        if ( FAILED( hr ) )
-        {
-            looping = false;
-        }
-
-        d2dRenderTarget->BeginDraw();
-        d2dRenderTarget->DrawBitmap( d2dBitmap.Get() );
-        hr = d2dRenderTarget->EndDraw();
-        if ( FAILED( hr ) )
-        {
-            looping = false;
-        }
-    }
-
-    free( renderTarget.m_Bits );
-    free( depthTarget.m_Bits );
-    s_Scene.FreeAll();
-
-    DestroyWindow( s_hWnd );
-
-    return (int)msg.wParam;
+    return true;
 }
 
+void CDemoApp_ModelViewer::OnDestroy()
+{
+    m_Scene.FreeAll();
+    m_CachedMeshDrawCommands.clear();
+}
 
+int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
+{
+    UNREFERENCED_PARAMETER( hPrevInstance );
+    UNREFERENCED_PARAMETER( lpCmdLine );
 
+    CDemoApp_ModelViewer demoApp( L"Model Viewer", hInstance, 800, 600 );
+    int returnCode = 0;
+    if ( demoApp.Initialize() )
+    {
+        returnCode = demoApp.Execute();
+    }
+    demoApp.Destroy();
+    return returnCode;
+}
