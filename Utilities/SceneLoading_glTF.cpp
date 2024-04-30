@@ -305,6 +305,7 @@ bool LoadSceneFronGLTFFile( const std::filesystem::path& filename, CScene* scene
         }
 
         newMaterial.m_AlphaTest = strcmp( srcMaterial.alphaMode.c_str(), "MASK" ) == 0;
+        newMaterial.m_AlphaBlend = strcmp( srcMaterial.alphaMode.c_str(), "BLEND" ) == 0;
         newMaterial.m_AlphaThreshold = (float)srcMaterial.alphaCutoff;
         newMaterial.m_TwoSided = srcMaterial.doubleSided;
     }

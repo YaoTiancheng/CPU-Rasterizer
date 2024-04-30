@@ -161,14 +161,17 @@ namespace Rasterizer
             , m_UseTexture( false )
             , m_UseVertexColor( false )
             , m_EnableAlphaTest( false )
+            , m_EnableAlphaBlend( false )
         {}
         
-        SPipelineState( bool useTexture, bool useVertexColor, bool enableAlphaTest = false, ELightingModel lightingModel = ELightingModel::eUnlit, ELightType lightType = ELightType::eDirectional )
+        SPipelineState( bool useTexture, bool useVertexColor, bool enableAlphaTest = false, bool enableAlphaBlend = false
+            , ELightingModel lightingModel = ELightingModel::eUnlit, ELightType lightType = ELightType::eDirectional )
             : m_LightingModel( lightingModel )
             , m_LightType( lightType )
             , m_UseTexture( useTexture )
             , m_UseVertexColor( useVertexColor )
             , m_EnableAlphaTest( enableAlphaTest )
+            , m_EnableAlphaBlend( enableAlphaBlend )
         {
         }
 
@@ -177,6 +180,7 @@ namespace Rasterizer
         bool m_UseTexture;
         bool m_UseVertexColor;
         bool m_EnableAlphaTest;
+        bool m_EnableAlphaBlend;
     };
 
     void Initialize();

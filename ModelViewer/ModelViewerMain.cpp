@@ -151,6 +151,7 @@ void CDemoApp_ModelViewer::OnUpdate()
         pipelineState.m_UseTexture = command.m_DiffuseTexture.m_Bits != nullptr;
         pipelineState.m_UseVertexColor = command.m_ColorStream.m_Data != nullptr;
         pipelineState.m_EnableAlphaTest = command.m_AlphaTest;
+        pipelineState.m_EnableAlphaBlend = command.m_AlphaBlend;
         Rasterizer::SetPipelineState( pipelineState );
 
         if ( command.m_IndexStream.m_Data )

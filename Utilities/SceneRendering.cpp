@@ -85,6 +85,7 @@ void GenerateMeshDrawCommands( const CScene& scene, std::vector<SMeshDrawCommand
                 newCommand.m_DiffuseTexture = TranslateSceneImage( scene, material.m_DiffuseTexture );
                 newCommand.m_AlphaRef = (uint8_t)( material.m_AlphaThreshold * 255.f + 0.5f );
                 newCommand.m_AlphaTest = material.m_AlphaTest;
+                newCommand.m_AlphaBlend = material.m_AlphaBlend;
                 newCommand.m_TwoSided = material.m_TwoSided;
             }
             else
@@ -92,6 +93,7 @@ void GenerateMeshDrawCommands( const CScene& scene, std::vector<SMeshDrawCommand
                 newCommand.m_DiffuseTexture = TranslateSceneImage( scene, -1 );
                 newCommand.m_AlphaRef = 0;
                 newCommand.m_AlphaTest = false;
+                newCommand.m_AlphaBlend = false;
                 newCommand.m_TwoSided = false;
             }
         }

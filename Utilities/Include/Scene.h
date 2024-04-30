@@ -20,6 +20,7 @@ struct SSceneMaterial
     float m_AlphaThreshold = 0.f;
     bool m_TwoSided = false;
     bool m_AlphaTest = false;
+    bool m_AlphaBlend = false;
 };
 
 struct SSceneBuffer

@@ -20,6 +20,7 @@ struct SMeshDrawCommand
     Rasterizer::SImage m_DiffuseTexture;
     uint8_t m_AlphaRef;
     bool m_AlphaTest;
+    bool m_AlphaBlend;
     bool m_TwoSided;
 };
 
