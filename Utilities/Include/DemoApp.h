@@ -11,7 +11,7 @@ class CDemoApp
 {
     friend LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam );
 public:
-	CDemoApp( const wchar_t* name, HINSTANCE hInstance, uint32_t width, uint32_t height );
+	CDemoApp( const wchar_t* name, HINSTANCE hInstance, uint32_t width, uint32_t height, bool needUpdate = true );
 
 	virtual ~CDemoApp();
 
@@ -26,12 +26,14 @@ private:
 	virtual void OnDestroy() {}
 	virtual void OnUpdate() {}
 	virtual bool OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam ) { return false; }
+	void Paint();
 
 protected:
 	void GetSwapChainSize( uint32_t* width, uint32_t* height );
 	bool CopyToSwapChain( Rasterizer::SImage image );
 
 	HWND m_hWnd;
+	const bool m_NeedUpdate;
     Microsoft::WRL::ComPtr<ID2D1Factory> m_D2DFactory;
 	Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> m_D2DRenderTarget;
 	Microsoft::WRL::ComPtr<ID2D1Bitmap> m_D2DBitmap;

@@ -13,6 +13,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Cubes", "Cubes\Cubes.vcxpro
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HelloTriangle", "HelloTriangle\HelloTriangle.vcxproj", "{1117EBB0-2440-4CB5-A0D7-E17AC0EA0507}"
 	ProjectSection(ProjectDependencies) = postProject
+		{4B62876F-D951-4DC3-A75F-CE8EC056DD1F} = {4B62876F-D951-4DC3-A75F-CE8EC056DD1F}
 		{56A956CB-4444-4CF0-8EBF-9602DAD80C6A} = {56A956CB-4444-4CF0-8EBF-9602DAD80C6A}
 	EndProjectSection
 EndProject

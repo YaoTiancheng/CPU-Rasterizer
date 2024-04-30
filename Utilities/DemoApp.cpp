@@ -5,25 +5,29 @@ static const wchar_t* s_WindowClassName = L"RasterizerWindow";
 
 static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
 {
+    bool messageProcessed = false;
+    CDemoApp* app = (CDemoApp*)GetWindowLongPtr( hWnd, 0 );
     switch ( message )
     {
     case WM_DESTROY:
         PostQuitMessage( 0 );
+        messageProcessed = true;
+        break;
+    case WM_PAINT:
+        if ( app && !app->m_NeedUpdate )
+        { 
+            app->Paint();
+            ValidateRect( hWnd, NULL );
+            messageProcessed = true;
+        }
         break;
     default:
+        if ( app && app->OnWndProc( hWnd, message, wParam, lParam ) )
         {
-            CDemoApp* app = (CDemoApp*)GetWindowLongPtr( hWnd, 0 );
-            if ( app && app->OnWndProc( hWnd, message, wParam, lParam ) )
-            {
-                return 0;
-            }
-            else
-            {
-                return DefWindowProc( hWnd, message, wParam, lParam );
-            }
+            messageProcessed = true;
         }
     }
-    return 0;
+    return messageProcessed ? 0 : DefWindowProc( hWnd, message, wParam, lParam );
 }
 
 static HWND CreateAppWindow( const wchar_t* title, HINSTANCE hInstance, uint32_t width, uint32_t height )
@@ -88,8 +92,9 @@ static bool CreateD2DContext( HWND hWnd, uint32_t width, uint32_t height, ID2D1F
     return true;
 }
 
-CDemoApp::CDemoApp( const wchar_t* name, HINSTANCE hInstance, uint32_t width, uint32_t height )
+CDemoApp::CDemoApp( const wchar_t* name, HINSTANCE hInstance, uint32_t width, uint32_t height, bool needUpdate )
     : m_hWnd( NULL )
+    , m_NeedUpdate( needUpdate )
 {
     m_hWnd = CreateAppWindow( name, hInstance, width, height );
     SetWindowLongPtr( m_hWnd, 0, (LONG_PTR)this );
@@ -145,29 +150,44 @@ void CDemoApp::Destroy()
 int CDemoApp::Execute()
 {
     MSG msg;
-    bool looping = true;
-    while ( looping )
+    if ( m_NeedUpdate )
     { 
-        while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
-        {
-            if ( msg.message == WM_QUIT )
+        bool looping = true;
+        while ( looping )
+        { 
+            while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
             {
-                looping = false;
-                break;
-            }
+                if ( msg.message == WM_QUIT )
+                {
+                    looping = false;
+                    break;
+                }
             
+                TranslateMessage( &msg );
+                DispatchMessage( &msg );
+            }
+
+            OnUpdate();
+            Paint();
+        }
+    }
+    else
+    {
+        while ( GetMessage( &msg, NULL, 0, 0 ) )
+        {
             TranslateMessage( &msg );
             DispatchMessage( &msg );
         }
-
-        OnUpdate();
-
-        m_D2DRenderTarget->BeginDraw();
-        m_D2DRenderTarget->DrawBitmap( m_D2DBitmap.Get() );
-        m_D2DRenderTarget->EndDraw();
     }
 
     return (int)msg.wParam;
+}
+
+void CDemoApp::Paint()
+{
+    m_D2DRenderTarget->BeginDraw();
+    m_D2DRenderTarget->DrawBitmap( m_D2DBitmap.Get() );
+    m_D2DRenderTarget->EndDraw();
 }
 
 void CDemoApp::GetSwapChainSize( uint32_t* width, uint32_t* height )
