@@ -11,6 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="DemoApp.cpp" />
     <ClCompile Include="SceneRendering.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneLoading_glTF.cpp" />
@@ -22,6 +23,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Include\DemoApp.h" />
     <ClInclude Include="Include\Scene.h" />
     <ClInclude Include="Include\SceneLoader.h" />
     <ClInclude Include="Include\SceneRendering.h" />

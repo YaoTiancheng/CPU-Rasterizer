@@ -1,84 +1,10 @@
 
 #include "PCH.h"
 #include "Rasterizer.h"
+#include "DemoApp.h"
 
 using namespace Microsoft::WRL;
 using namespace DirectX;
-
-static const wchar_t* s_WindowClassName = L"RasterizerWindow";
-
-static const uint32_t s_TexturesCount = 2;
-static uint32_t s_CurrentTextureIndex = 0;
-static bool s_AlphaTestEnabled = false;
-static Rasterizer::ECullMode s_CullMode = Rasterizer::ECullMode::eCullCW;
-
-static LRESULT CALLBACK WndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
-{
-    switch ( message )
-    {
-    case WM_KEYDOWN:
-        if ( ( lParam & 0x40000000 ) == 0 )
-        { 
-            if ( wParam == 'T' )
-            {
-                s_CurrentTextureIndex = ( s_CurrentTextureIndex + 1 ) % s_TexturesCount;
-            }
-            else if ( wParam == 'A' )
-            {
-                s_AlphaTestEnabled = s_AlphaTestEnabled != true;
-            }
-            else if ( wParam == 'C' )
-            {
-                s_CullMode = (Rasterizer::ECullMode)( ( (uint32_t)s_CullMode + 1 ) % 3 );
-            }
-        }
-        break;
-    case WM_DESTROY:
-        PostQuitMessage( 0 );
-        break;
-    default:
-        return DefWindowProc( hWnd, message, wParam, lParam );
-    }
-    return 0;
-}
-
-static HWND CreateAppWindow( HINSTANCE hInstance, uint32_t width, uint32_t height )
-{
-    WNDCLASSEXW wcex;
-
-    wcex.cbSize = sizeof( WNDCLASSEX );
-
-    wcex.style = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc = WndProc;
-    wcex.cbClsExtra = 0;
-    wcex.cbWndExtra = 0;
-    wcex.hInstance = hInstance;
-    wcex.hIcon = NULL;
-    wcex.hCursor = LoadCursor( nullptr, IDC_ARROW );
-    wcex.hbrBackground = (HBRUSH)( COLOR_WINDOW + 1 );
-    wcex.lpszMenuName = NULL;
-    wcex.lpszClassName = s_WindowClassName;
-    wcex.hIconSm = NULL;
-
-    if ( !RegisterClassExW( &wcex ) )
-    {
-        return NULL;
-    }
-
-    const DWORD windowStyle = WS_OVERLAPPEDWINDOW & ~WS_SIZEBOX & ~WS_MAXIMIZEBOX;
-
-    RECT rect;
-    rect.left = 0;
-    rect.top = 0;
-    rect.right = width;
-    rect.bottom = height;
-    AdjustWindowRect( &rect, windowStyle, FALSE );
-
-    HWND hWnd = CreateWindowW( s_WindowClassName, L"Cubes", windowStyle,
-        CW_USEDEFAULT, 0, rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, hInstance, nullptr );
-
-    return hWnd;
-}
 
 static bool CreateTextureFromFile( IWICImagingFactory* factory, const wchar_t* filename, Rasterizer::SImage* texture )
 {
@@ -116,8 +42,60 @@ static bool CreateTextureFromFile( IWICImagingFactory* factory, const wchar_t* f
     return SUCCEEDED( convertedFrame->CopyPixels( nullptr, texture->m_Width * 4, byteSize, (BYTE*)texture->m_Bits ) );
 }
 
-static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures,
-    uint8_t*& vertexBuffer, Rasterizer::SStream* posStream, Rasterizer::SStream* texcoordStream, uint16_t*& indices, Rasterizer::SStream* indexStream, uint32_t* triangleCount )
+class CDemoApp_Cubes : public CDemoApp
+{
+    using CDemoApp::CDemoApp;
+
+    virtual bool OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam ) override;
+    virtual bool OnInit() override;
+    virtual void OnDestroy() override;
+    virtual void OnUpdate() override;
+
+    bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SStream* posStream, Rasterizer::SStream* texcoordStream, Rasterizer::SStream* indexStream );
+    void DestroyRenderData();
+
+    static const uint32_t s_TexturesCount = 2;
+
+    Rasterizer::SImage m_RenderTarget;
+    Rasterizer::SImage m_DepthTarget;
+    Rasterizer::SImage m_Textures[ s_TexturesCount ] = {};
+    uint8_t* m_VertexBuffer = nullptr;
+    uint16_t* m_Indices = nullptr;
+    uint32_t m_TriangleCount = 0;
+
+    uint32_t m_CurrentTextureIndex = 0;
+    bool m_AlphaTestEnabled = false;
+    Rasterizer::ECullMode m_CullMode = Rasterizer::ECullMode::eCullCW;
+
+    float m_Roll = 0.f, m_Pitch = 0.f, m_Yall = 0.f;
+};
+
+bool CDemoApp_Cubes::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
+{
+    switch ( message )
+    {
+    case WM_KEYDOWN:
+        if ( ( lParam & 0x40000000 ) == 0 )
+        { 
+            if ( wParam == 'T' )
+            {
+                m_CurrentTextureIndex = ( m_CurrentTextureIndex + 1 ) % s_TexturesCount;
+            }
+            else if ( wParam == 'A' )
+            {
+                m_AlphaTestEnabled = m_AlphaTestEnabled != true;
+            }
+            else if ( wParam == 'C' )
+            {
+                m_CullMode = (Rasterizer::ECullMode)( ( (uint32_t)m_CullMode + 1 ) % 3 );
+            }
+        }
+        break;
+    }
+    return false;
+}
+
+bool CDemoApp_Cubes::CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SStream* posStream, Rasterizer::SStream* texcoordStream, Rasterizer::SStream* indexStream )
 {
     struct SVertex
     {
@@ -126,9 +104,9 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     };
 
     const uint32_t vertexBufferSize = 24 * sizeof( SVertex ); 
-    vertexBuffer = (uint8_t*)malloc( vertexBufferSize );
+    m_VertexBuffer = (uint8_t*)malloc( vertexBufferSize );
 
-    SVertex* vertices = (SVertex*)vertexBuffer;
+    SVertex* vertices = (SVertex*)m_VertexBuffer;
     // Front 
     vertices[ 0 ] = { 1.f, -1.f, -1.f, 1.f, 1.f };
     vertices[ 1 ] = { -1.f, 1.f, -1.f, 0.f, 0.f };
@@ -165,46 +143,45 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     vertices[ 22 ] = { 1.f, -1.f, -1.f, 0.f, 1.f };
     vertices[ 23 ] = { -1.f, -1.f, 1.f, 1.f, 0.f };
 
-    posStream->m_Data = vertexBuffer;
+    posStream->m_Data = m_VertexBuffer;
     posStream->m_Offset = 0;
     posStream->m_Stride = sizeof( SVertex );
     posStream->m_Size = vertexBufferSize;
 
-    texcoordStream->m_Data = vertexBuffer;
+    texcoordStream->m_Data = m_VertexBuffer;
     texcoordStream->m_Offset = offsetof( SVertex, m_TexU );
     texcoordStream->m_Stride = sizeof( SVertex );
     texcoordStream->m_Size = vertexBufferSize;
 
-    indices = (uint16_t*)malloc( 36 * 2 );
-    indices[ 0 ] = 0; indices[ 1 ] = 1; indices[ 2 ] = 2;
-    indices[ 3 ] = 1; indices[ 4 ] = 0; indices[ 5 ] = 3;
-    indices[ 6 ] = 4; indices[ 7 ] = 5; indices[ 8 ] = 6;
-    indices[ 9 ] = 5; indices[ 10 ] = 4; indices[ 11 ] = 7;
-    indices[ 12 ] = 8; indices[ 13 ] = 9; indices[ 14 ] = 10;
-    indices[ 15 ] = 9; indices[ 16 ] = 8; indices[ 17 ] = 11;
-    indices[ 18 ] = 12; indices[ 19 ] = 13; indices[ 20 ] = 14;
-    indices[ 21 ] = 13; indices[ 22 ] = 12; indices[ 23 ] = 15;
-    indices[ 24 ] = 16; indices[ 25 ] = 17; indices[ 26 ] = 18;
-    indices[ 27 ] = 17; indices[ 28 ] = 16; indices[ 29 ] = 19;
-    indices[ 30 ] = 20; indices[ 31 ] = 21; indices[ 32 ] = 22;
-    indices[ 33 ] = 21; indices[ 34 ] = 20; indices[ 35 ] = 23;
+    m_Indices = (uint16_t*)malloc( 36 * 2 );
+    m_Indices[ 0 ] = 0; m_Indices[ 1 ] = 1; m_Indices[ 2 ] = 2;
+    m_Indices[ 3 ] = 1; m_Indices[ 4 ] = 0; m_Indices[ 5 ] = 3;
+    m_Indices[ 6 ] = 4; m_Indices[ 7 ] = 5; m_Indices[ 8 ] = 6;
+    m_Indices[ 9 ] = 5; m_Indices[ 10 ] = 4; m_Indices[ 11 ] = 7;
+    m_Indices[ 12 ] = 8; m_Indices[ 13 ] = 9; m_Indices[ 14 ] = 10;
+    m_Indices[ 15 ] = 9; m_Indices[ 16 ] = 8; m_Indices[ 17 ] = 11;
+    m_Indices[ 18 ] = 12; m_Indices[ 19 ] = 13; m_Indices[ 20 ] = 14;
+    m_Indices[ 21 ] = 13; m_Indices[ 22 ] = 12; m_Indices[ 23 ] = 15;
+    m_Indices[ 24 ] = 16; m_Indices[ 25 ] = 17; m_Indices[ 26 ] = 18;
+    m_Indices[ 27 ] = 17; m_Indices[ 28 ] = 16; m_Indices[ 29 ] = 19;
+    m_Indices[ 30 ] = 20; m_Indices[ 31 ] = 21; m_Indices[ 32 ] = 22;
+    m_Indices[ 33 ] = 21; m_Indices[ 34 ] = 20; m_Indices[ 35 ] = 23;
 
-    indexStream->m_Data = (uint8_t*)indices;
+    indexStream->m_Data = (uint8_t*)m_Indices;
     indexStream->m_Offset = 0;
     indexStream->m_Size = 36 * 2;
     indexStream->m_Stride = 2;
 
-    *triangleCount = 12;
+    m_TriangleCount = 12;
 
-    renderTarget->m_Width = width;
-    renderTarget->m_Height = height;
-    renderTarget->m_Bits = (uint8_t*)malloc( width * height * 4 );
+    m_RenderTarget.m_Width = width;
+    m_RenderTarget.m_Height = height;
+    m_RenderTarget.m_Bits = (uint8_t*)malloc( width * height * 4 );
 
-    depthTarget->m_Width = width;
-    depthTarget->m_Height = height;
-    depthTarget->m_Bits = (uint8_t*)malloc( width * height * 4 );
+    m_DepthTarget.m_Width = width;
+    m_DepthTarget.m_Height = height;
+    m_DepthTarget.m_Bits = (uint8_t*)malloc( width * height * 4 );
 
-    // Load the texture from file
     ComPtr<IWICImagingFactory> WICImagingFactory;
     HRESULT hr = CoCreateInstance( CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, (LPVOID*)WICImagingFactory.GetAddressOf() );
     if ( FAILED( hr ) )
@@ -215,7 +192,7 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     const wchar_t* s_TextureFilenames[ s_TexturesCount ] = { L"Resources/BRICK_1A.PNG", L"Resources/foliage_21.PNG" };
     for ( uint32_t i = 0; i < s_TexturesCount; ++i )
     {
-        if ( !CreateTextureFromFile( WICImagingFactory.Get(), s_TextureFilenames[ i ], &textures[ i ] ) )
+        if ( !CreateTextureFromFile( WICImagingFactory.Get(), s_TextureFilenames[ i ], &m_Textures[ i ] ) )
         {
             return false;
         }
@@ -224,26 +201,60 @@ static bool CreateRenderData( uint32_t width, uint32_t height, Rasterizer::SImag
     return true;
 }
 
-static void DestroyRenderData( Rasterizer::SImage* renderTarget, Rasterizer::SImage* depthTarget, Rasterizer::SImage* textures, uint8_t* vertexBuffer, uint16_t* indices )
+void CDemoApp_Cubes::DestroyRenderData()
 {
-    free( vertexBuffer );
-    free( indices );
-    free( renderTarget->m_Bits );
-    free( depthTarget->m_Bits );
+    free( m_VertexBuffer );
+    free( m_Indices );
+    free( m_RenderTarget.m_Bits );
+    free( m_DepthTarget.m_Bits );
     for ( uint32_t i = 0; i < s_TexturesCount; ++i )
     { 
-        free( textures[ i ].m_Bits );
+        free( m_Textures[ i ].m_Bits );
     }
 }
 
-static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& texture, Rasterizer::SImage& renderTarget, Rasterizer::SImage& depthTarget, uint32_t triangleCount, float aspectRatio, float& roll, float& pitch, float& yall )
+bool CDemoApp_Cubes::OnInit()
 {
-    yall += XMConvertToRadians( 0.5f );
-    roll += XMConvertToRadians( 0.3f );
+    Rasterizer::SStream posStream, texcoordStream, indexStream;
 
-    ZeroMemory( renderTarget.m_Bits, renderTarget.m_Width * renderTarget.m_Height * 4 );
-    float* depthBit = (float*)depthTarget.m_Bits;
-    for ( uint32_t i = 0; i < depthTarget.m_Width * depthTarget.m_Height; ++i )
+    uint32_t width, height;
+    GetSwapChainSize( &width, &height );
+
+    if ( !CreateRenderData( width, height, &posStream, &texcoordStream, &indexStream ) )
+    {
+        return false;
+    }
+
+    Rasterizer::SViewport viewport;
+    viewport.m_Left = 0;
+    viewport.m_Top = 0;
+    viewport.m_Width = width;
+    viewport.m_Height = height;
+
+    Rasterizer::Initialize();
+    Rasterizer::SetPositionStream( posStream );
+    Rasterizer::SetTexcoordStream( texcoordStream );
+    Rasterizer::SetIndexStream( indexStream );
+    Rasterizer::SetRenderTarget( m_RenderTarget );
+    Rasterizer::SetDepthTarget( m_DepthTarget );
+    Rasterizer::SetViewport( viewport );
+
+    return true;
+}
+
+void CDemoApp_Cubes::OnDestroy()
+{
+    DestroyRenderData();
+}
+
+void CDemoApp_Cubes::OnUpdate()
+{
+    m_Yall += XMConvertToRadians( 0.5f );
+    m_Roll += XMConvertToRadians( 0.3f );
+
+    ZeroMemory( m_RenderTarget.m_Bits, m_RenderTarget.m_Width * m_RenderTarget.m_Height * 4 );
+    float* depthBit = (float*)m_DepthTarget.m_Bits;
+    for ( uint32_t i = 0; i < m_DepthTarget.m_Width * m_DepthTarget.m_Height; ++i )
     {
         *depthBit = 1.f;
         ++depthBit;
@@ -252,25 +263,26 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& texture, Ra
     Rasterizer::SVector4 diffuseColors[] = { { 1.f, 1.f, 1.0f, 1.0f }, { 0.8f, 0.4f, 0.0f, 1.0f }, { 0.8f, 0.2f, 0.5f, 1.0f }, { 0.3f, 0.5f, 0.28f, 1.0f } };
 
     Rasterizer::SMatrix matrix;
-    XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( pitch, yall, roll );
+    XMMATRIX rotationMatrix = XMMatrixRotationRollPitchYaw( m_Pitch, m_Yall, m_Roll );
     XMMATRIX viewMatrix = XMMatrixSet(
         1.f, 0.f, 0.f, 0.f,
         0.f, 1.f, 0.f, 0.f,
         0.f, 0.f, 1.f, 0.f,
         0.f, 0.f, 10.f, 1.f );
+    const float aspectRatio = (float)m_RenderTarget.m_Width / m_RenderTarget.m_Height;
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( 1.0f, aspectRatio, 2.f, 1000.f );
 
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
 
-    Rasterizer::SetTexture( texture );
+    Rasterizer::SetTexture( m_Textures[ m_CurrentTextureIndex ] );
 
     Rasterizer::SPipelineState pipelineState( true, false );
-    pipelineState.m_EnableAlphaTest = s_AlphaTestEnabled;
+    pipelineState.m_EnableAlphaTest = m_AlphaTestEnabled;
     Rasterizer::SetPipelineState( pipelineState );
 
     Rasterizer::SetAlphaRef( 0x80 );
-    Rasterizer::SetCullMode( s_CullMode );
+    Rasterizer::SetCullMode( m_CullMode );
 
     XMINT3 cubeCount( 3, 3, 3 );
     XMFLOAT3 cubeSpacing( 3.f, 3.f, 3.f );
@@ -291,10 +303,12 @@ static void RenderImage( ID2D1Bitmap* d2dBitmap, Rasterizer::SImage& texture, Ra
                 XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
                 Rasterizer::SetWorldViewTransform( matrix );
 
-                Rasterizer::DrawIndexed( 0, 0, triangleCount );
+                Rasterizer::DrawIndexed( 0, 0, m_TriangleCount );
             }
         }
     }
+
+    CopyToSwapChain( m_RenderTarget );
 }
 
 int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPWSTR lpCmdLine, _In_ int nCmdShow )
@@ -302,111 +316,14 @@ int APIENTRY wWinMain( _In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
     UNREFERENCED_PARAMETER( hPrevInstance );
     UNREFERENCED_PARAMETER( lpCmdLine );
 
-    const uint32_t width = 800;
-    const uint32_t height = 600;
-    const float aspectRatio = (float)width / height;
-
-    HWND hWnd = CreateAppWindow( hInstance, width, height );
-    if ( !hWnd )
+    CDemoApp_Cubes demoApp( L"Cubes", hInstance, 800, 600 );
+    int returnCode = 0;
+    if ( demoApp.Initialize() )
     {
-        return 0;
+        returnCode = demoApp.Execute();
     }
-
-    ComPtr<ID2D1Factory> d2dFactory;
-    ComPtr<ID2D1HwndRenderTarget> d2dRenderTarget;
-    ComPtr<ID2D1Bitmap> d2dBitmap;
-
-    HRESULT hr = S_OK;
-    hr = D2D1CreateFactory( D2D1_FACTORY_TYPE_SINGLE_THREADED, d2dFactory.GetAddressOf() );
-    if ( FAILED( hr ) )
-    {
-        return 0;
-    }
-
-    const D2D1_SIZE_U d2dSize = { width, height };
-
-    hr = d2dFactory->CreateHwndRenderTarget( D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties( hWnd, d2dSize ), d2dRenderTarget.GetAddressOf() );
-    if ( FAILED( hr ) )
-    {
-        return 0;
-    }
-
-    hr = d2dRenderTarget->CreateBitmap( d2dSize, D2D1::BitmapProperties( D2D1::PixelFormat( DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE ) ), d2dBitmap.GetAddressOf() );
-    if ( FAILED( hr ) )
-    {
-        return 0;
-    }
-
-    ShowWindow( hWnd, nCmdShow );
-    UpdateWindow( hWnd );
-
-    Rasterizer::SImage renderTarget;
-    Rasterizer::SImage depthTarget;
-    Rasterizer::SImage textures[ s_TexturesCount ] = {};
-    uint8_t* vertexBuffer;
-    Rasterizer::SStream posStream, texcoordStream, indexStream;
-    uint16_t* indices;
-    uint32_t triangleCount;
-    if ( !CreateRenderData( width, height, &renderTarget, &depthTarget, textures, vertexBuffer, &posStream, &texcoordStream, indices, &indexStream, &triangleCount ) )
-    {
-        return 0;
-    }
-
-    Rasterizer::SViewport viewport;
-    viewport.m_Left = 0;
-    viewport.m_Top = 0;
-    viewport.m_Width = width;
-    viewport.m_Height = height;
-
-    Rasterizer::Initialize();
-    Rasterizer::SetPositionStream( posStream );
-    Rasterizer::SetTexcoordStream( texcoordStream );
-    Rasterizer::SetIndexStream( indexStream );
-    Rasterizer::SetRenderTarget( renderTarget );
-    Rasterizer::SetDepthTarget( depthTarget );
-    Rasterizer::SetViewport( viewport );
-
-    float roll = 0.f, pitch = 0.f, yall = 0.f;
-
-    MSG msg;
-    bool looping = true;
-    while ( looping )
-    { 
-        while ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )
-        {
-            if ( msg.message == WM_QUIT )
-            {
-                looping = false;
-                break;
-            }
-            
-            TranslateMessage( &msg );
-            DispatchMessage( &msg );
-        }
-
-        RenderImage( d2dBitmap.Get(), textures[ s_CurrentTextureIndex ], renderTarget, depthTarget, triangleCount, aspectRatio, roll, pitch, yall );
-
-        D2D1_RECT_U d2dRect = { 0, 0, width, height };
-        HRESULT hr = d2dBitmap->CopyFromMemory( &d2dRect, renderTarget.m_Bits, width * 4 );
-        if ( FAILED( hr ) )
-        {
-            looping = false;
-        }
-
-        d2dRenderTarget->BeginDraw();
-        d2dRenderTarget->DrawBitmap( d2dBitmap.Get() );
-        hr = d2dRenderTarget->EndDraw();
-        if ( FAILED( hr ) )
-        {
-            looping = false;
-        }
-    }
-
-    DestroyRenderData( &renderTarget, &depthTarget, textures, vertexBuffer, indices );
-
-    DestroyWindow( hWnd );
-
-    return (int)msg.wParam;
+    demoApp.Destroy();
+    return returnCode;
 }
 
 
