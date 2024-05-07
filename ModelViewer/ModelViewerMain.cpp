@@ -8,6 +8,12 @@
 
 using namespace DirectX;
 
+struct SMeshDrawCommandInfo
+{
+    const SMeshDrawCommand* m_Command;
+    float m_DistanceToCamera;
+};
+
 class CDemoApp_ModelViewer : public CDemoApp
 {
     using CDemoApp::CDemoApp;
@@ -23,6 +29,7 @@ class CDemoApp_ModelViewer : public CDemoApp
     Rasterizer::SImage m_RenderTarget, m_DepthTarget;
     CScene m_Scene;
     std::vector<SMeshDrawCommand> m_CachedMeshDrawCommands;
+    size_t m_TranslucentMeshDrawCommandsStart = 0;
     XMFLOAT3 m_CameraLookAt = { 0.f, 0.f, 0.f };
     float m_CameraDistance = 0.f;
     float m_CameraPitch = 0.f, m_CameraYall = 0.f;
@@ -54,11 +61,21 @@ bool CDemoApp_ModelViewer::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LP
             {
                 m_Scene.FreeAll();
                 m_CachedMeshDrawCommands.clear();
+                m_TranslucentMeshDrawCommandsStart = 0;
                 if ( LoadSceneFronGLTFFile( filename, &m_Scene ) )
                 {
                     m_Scene.FlipCoordinateHandness();
                     ComputeCameraLookAtAndDistance();
-                    GenerateMeshDrawCommands( m_Scene, &m_CachedMeshDrawCommands );
+                    std::vector<XMFLOAT4X3> nodeWorldTransforms;
+                    CalculateNodeWorldTransforms( m_Scene, &nodeWorldTransforms );
+                    GenerateMeshDrawCommands( m_Scene, nodeWorldTransforms, &m_CachedMeshDrawCommands );
+                    // Order all opaque draws before translucent ones.
+                    if ( !m_CachedMeshDrawCommands.empty() )
+                    { 
+                        auto iterTranslucent = std::partition( m_CachedMeshDrawCommands.begin(), m_CachedMeshDrawCommands.end(), 
+                            []( const SMeshDrawCommand& command ) { return !command.m_AlphaBlend; } );
+                        m_TranslucentMeshDrawCommandsStart = std::distance( m_CachedMeshDrawCommands.begin(), iterTranslucent );
+                    }
                 }
             }
         }
@@ -109,6 +126,32 @@ void CDemoApp_ModelViewer::OnUpdate()
 {
     UpdateCamera();
 
+    XMMATRIX cameraWorldMatrix = XMMatrixTranslation( 0.f, 0.f, -m_CameraDistance );
+    cameraWorldMatrix = XMMatrixMultiply( cameraWorldMatrix, XMMatrixRotationRollPitchYaw( m_CameraPitch, m_CameraYall, 0.f ) );
+    cameraWorldMatrix = XMMatrixMultiply( cameraWorldMatrix, XMMatrixTranslation( m_CameraLookAt.x, m_CameraLookAt.y, m_CameraLookAt.z ) );
+
+    std::vector<SMeshDrawCommandInfo> commandsInfo;
+
+    {
+        const XMVECTOR cameraPosition = cameraWorldMatrix.r[ 3 ];
+        commandsInfo.reserve( m_CachedMeshDrawCommands.size() );
+        for ( const SMeshDrawCommand& command : m_CachedMeshDrawCommands )
+        {
+            commandsInfo.emplace_back();
+            SMeshDrawCommandInfo& commandInfo = commandsInfo.back();
+            commandInfo.m_Command = &command;
+            const XMFLOAT3 position = command.m_BoundingBox.Center;
+            XMStoreFloat( &commandInfo.m_DistanceToCamera, XMVector3LengthSq( XMLoadFloat3( &position ) - cameraPosition ) );
+        }
+
+        // Sort opaque draws front to back to minimize overdraw
+        std::sort( commandsInfo.begin(), commandsInfo.begin() + m_TranslucentMeshDrawCommandsStart, 
+            []( const SMeshDrawCommandInfo& infoA, const SMeshDrawCommandInfo& infoB ) { return infoA.m_DistanceToCamera < infoB.m_DistanceToCamera; } );
+        // Sort translucent draws back to front to maintain correct blending result
+        std::sort( commandsInfo.begin() + m_TranslucentMeshDrawCommandsStart, commandsInfo.end(),
+            []( const SMeshDrawCommandInfo& infoA, const SMeshDrawCommandInfo& infoB ) { return infoA.m_DistanceToCamera > infoB.m_DistanceToCamera; } );
+    }
+
     ZeroMemory( m_RenderTarget.m_Bits, m_RenderTarget.m_Width * m_RenderTarget.m_Height * 4 );
     float* depthBit = (float*)m_DepthTarget.m_Bits;
     for ( uint32_t i = 0; i < m_DepthTarget.m_Width * m_DepthTarget.m_Height; ++i )
@@ -119,18 +162,16 @@ void CDemoApp_ModelViewer::OnUpdate()
 
     Rasterizer::SMatrix matrix;
 
-    XMMATRIX viewMatrix = XMMatrixTranslation( 0.f, 0.f, -m_CameraDistance );
-    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixRotationRollPitchYaw( m_CameraPitch, m_CameraYall, 0.f ) );
-    viewMatrix = XMMatrixMultiply( viewMatrix, XMMatrixTranslation( m_CameraLookAt.x, m_CameraLookAt.y, m_CameraLookAt.z ) );
-    viewMatrix = XMMatrixInverse( nullptr, viewMatrix );
+    XMMATRIX viewMatrix = XMMatrixInverse( nullptr, cameraWorldMatrix );
 
     const float aspectRatio = (float)m_RenderTarget.m_Width / m_RenderTarget.m_Height;
     XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
 
-    for ( const SMeshDrawCommand& command : m_CachedMeshDrawCommands )
+    for ( const SMeshDrawCommandInfo& commandInfo : commandsInfo )
     {
+        const SMeshDrawCommand& command = *commandInfo.m_Command;
         XMMATRIX worldMatrix = XMLoadFloat4x3( &command.m_WorldMatrix );
         XMMATRIX worldViewMatrix = XMMatrixMultiply( worldMatrix, viewMatrix );
         XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, worldViewMatrix );
@@ -146,6 +187,7 @@ void CDemoApp_ModelViewer::OnUpdate()
 
         Rasterizer::SetCullMode( command.m_TwoSided ? Rasterizer::ECullMode::eNone : Rasterizer::ECullMode::eCullCW );
         Rasterizer::SetAlphaRef( command.m_AlphaRef );
+        Rasterizer::SetEnableDepthWrite( !command.m_AlphaBlend );
 
         Rasterizer::SPipelineState pipelineState;
         pipelineState.m_UseTexture = command.m_DiffuseTexture.m_Bits != nullptr;

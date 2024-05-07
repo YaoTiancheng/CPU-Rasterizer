@@ -78,6 +78,7 @@ static PerspectiveDivisionFunctionPtr s_PerspectiveDivisionFunction = nullptr;
 static TriangleSetupFunctionPtr s_TriangleSetupFunction = nullptr;
 static RasterizingFunctionPtr s_RasterizingFunction = nullptr;
 
+static bool s_EnableDepthWrite = true;
 static ECullMode s_CullMode = ECullMode::eCullCW;
 
 static SMatrix s_WorldViewMatrix =
@@ -760,7 +761,7 @@ static void RasterizeTriangles( STriangleSetupOutput input, uint32_t inputStride
                     float* dstDepth = (float*)s_DepthTarget.m_Bits + imgY * s_DepthTarget.m_Width + imgX;
                     if ( z < *dstDepth )
                     {
-                        if ( !EnableAlphaTest )
+                        if ( !EnableAlphaTest && s_EnableDepthWrite )
                         {
                             *dstDepth = z;
                         }
@@ -802,7 +803,10 @@ static void RasterizeTriangles( STriangleSetupOutput input, uint32_t inputStride
                                 goto NextFragment;
                             }
 
-                            *dstDepth = z;
+                            if ( s_EnableDepthWrite )
+                            { 
+                                *dstDepth = z;
+                            }
                         }
 
                         if ( NeedLighting )
@@ -1267,6 +1271,11 @@ void Rasterizer::SetTexture( const SImage& image )
 void Rasterizer::SetAlphaRef( uint8_t value )
 {
     s_AlphaRef = value;
+}
+
+void Rasterizer::SetEnableDepthWrite( bool enable )
+{
+    s_EnableDepthWrite = enable;
 }
 
 void Rasterizer::SetCullMode( ECullMode mode )

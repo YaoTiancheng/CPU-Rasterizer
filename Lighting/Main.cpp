@@ -66,7 +66,9 @@ bool CDemoApp_Lighting::CreateRenderData( uint32_t width, uint32_t height )
     // The teapot.obj is in right hand coordinate, convert it to left hand coordinate
     m_Scene.FlipCoordinateHandness();
 
-    GenerateMeshDrawCommands( m_Scene, &m_MeshDrawCommands );
+    std::vector<XMFLOAT4X3> nodeWorldTransforms;
+    CalculateNodeWorldTransforms( m_Scene, &nodeWorldTransforms );
+    GenerateMeshDrawCommands( m_Scene, nodeWorldTransforms, &m_MeshDrawCommands );
 
     m_RenderTarget.m_Width = width;
     m_RenderTarget.m_Height = height;

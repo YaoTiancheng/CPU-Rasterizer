@@ -215,6 +215,8 @@ namespace Rasterizer
 
     void SetAlphaRef( uint8_t value );
 
+    void SetEnableDepthWrite( bool enable );
+
     void SetCullMode( ECullMode mode );
 
     void SetIndexType( EIndexType type );
