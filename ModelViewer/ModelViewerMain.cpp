@@ -23,7 +23,7 @@ class CDemoApp_ModelViewer : public CDemoApp
     virtual void OnUpdate() override;
     virtual bool OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam ) override;
 
-    void ComputeCameraLookAtAndDistance();
+    void ComputeCameraLookAtAndDistance( const std::vector<BoundingBox>& meshSectionBoundingBoxes );
     void UpdateCamera();
 
     Rasterizer::SImage m_RenderTarget, m_DepthTarget;
@@ -65,10 +65,13 @@ bool CDemoApp_ModelViewer::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LP
                 if ( LoadSceneFronGLTFFile( filename, &m_Scene ) )
                 {
                     m_Scene.FlipCoordinateHandness();
-                    ComputeCameraLookAtAndDistance();
                     std::vector<XMFLOAT4X3> nodeWorldTransforms;
-                    CalculateNodeWorldTransforms( m_Scene, &nodeWorldTransforms );
-                    GenerateMeshDrawCommands( m_Scene, nodeWorldTransforms, &m_CachedMeshDrawCommands );
+                    std::vector<BoundingBox> meshSectionBoundingBoxes;
+                    m_Scene.CalculateNodeWorldTransforms( &nodeWorldTransforms );
+                    m_Scene.CalculateMeshSectionBoundingBoxes( &meshSectionBoundingBoxes ); // Local space bounding boxes
+                    m_Scene.TransformMeshSectionBoundingBoxes( nodeWorldTransforms, meshSectionBoundingBoxes ); // World space bounding boxes
+                    ComputeCameraLookAtAndDistance( meshSectionBoundingBoxes );
+                    GenerateMeshDrawCommands( m_Scene, nodeWorldTransforms, &meshSectionBoundingBoxes, &m_CachedMeshDrawCommands );
                     // Order all opaque draws before translucent ones.
                     if ( !m_CachedMeshDrawCommands.empty() )
                     { 
@@ -84,9 +87,18 @@ bool CDemoApp_ModelViewer::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LP
     return false;
 }
 
-void CDemoApp_ModelViewer::ComputeCameraLookAtAndDistance()
+void CDemoApp_ModelViewer::ComputeCameraLookAtAndDistance( const std::vector<BoundingBox>& meshSectionBoundingBoxes )
 {
-    BoundingSphere sphere = m_Scene.CalculateBoundingSphere();
+    BoundingSphere sphere( XMFLOAT3( 0.f, 0.f, 0.f ), 0.f );
+    if ( !meshSectionBoundingBoxes.empty() )
+    {
+        BoundingBox mergedBox = meshSectionBoundingBoxes.front();
+        for ( const BoundingBox& box : meshSectionBoundingBoxes )
+        {
+            BoundingBox::CreateMerged( mergedBox, mergedBox, box );
+        }
+        BoundingSphere::CreateFromBoundingBox( sphere, mergedBox );
+    }
     m_CameraLookAt = sphere.Center;
     m_CameraDistance = sphere.Radius * 2.2f;
 }

@@ -67,8 +67,8 @@ bool CDemoApp_Lighting::CreateRenderData( uint32_t width, uint32_t height )
     m_Scene.FlipCoordinateHandness();
 
     std::vector<XMFLOAT4X3> nodeWorldTransforms;
-    CalculateNodeWorldTransforms( m_Scene, &nodeWorldTransforms );
-    GenerateMeshDrawCommands( m_Scene, nodeWorldTransforms, &m_MeshDrawCommands );
+    m_Scene.CalculateNodeWorldTransforms( &nodeWorldTransforms );
+    GenerateMeshDrawCommands( m_Scene, nodeWorldTransforms, nullptr, &m_MeshDrawCommands );
 
     m_RenderTarget.m_Width = width;
     m_RenderTarget.m_Height = height;

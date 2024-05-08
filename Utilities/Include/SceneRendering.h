@@ -26,6 +26,5 @@ struct SMeshDrawCommand
     bool m_TwoSided;
 };
 
-void CalculateNodeWorldTransforms( const CScene& scene, std::vector<DirectX::XMFLOAT4X3>* transforms );
-
-void GenerateMeshDrawCommands( const CScene& scene, const std::vector<DirectX::XMFLOAT4X3>& nodeWorldTransforms, std::vector<SMeshDrawCommand>* commands );
+void GenerateMeshDrawCommands( const CScene& scene, const std::vector<DirectX::XMFLOAT4X3>& nodeWorldTransforms,
+    const std::vector<DirectX::BoundingBox>* meshSectionBoundingBoxes, std::vector<SMeshDrawCommand>* commands );

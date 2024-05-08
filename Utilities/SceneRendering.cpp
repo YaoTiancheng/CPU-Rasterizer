@@ -55,25 +55,13 @@ inline static Rasterizer::SImage TranslateSceneImage( const CScene& scene, int32
     return out;
 }
 
-void CalculateNodeWorldTransforms( const CScene& scene, std::vector<DirectX::XMFLOAT4X3>* transforms )
+void GenerateMeshDrawCommands( const CScene& scene, const std::vector<XMFLOAT4X3>& nodeWorldTransforms, const std::vector<DirectX::BoundingBox>* meshSectionBoundingBoxes, std::vector<SMeshDrawCommand>* commands )
 {
-    transforms->reserve( transforms->size() + scene.m_Nodes.size() );
-    for ( const SSceneNode& node : scene.m_Nodes )
-    {
-        XMMATRIX worldMatrix = scene.CalculateNodeWorldTransform( node );
-        transforms->emplace_back();
-        XMFLOAT4X3& matrix = transforms->back();
-        XMStoreFloat4x3( &matrix, worldMatrix );
-    }
-}
-
-void GenerateMeshDrawCommands( const CScene& scene, const std::vector<XMFLOAT4X3>& nodeWorldTransforms, std::vector<SMeshDrawCommand>* commands )
-{
+    uint32_t sectionIndex = 0;
     for ( int32_t meshNodeIndex : scene.m_MeshNodes )
     {
         const SSceneNode& meshNode = scene.m_Nodes[ meshNodeIndex ];
         const XMFLOAT4X3& worldTransform = nodeWorldTransforms[ meshNodeIndex ];
-        const XMMATRIX matrix = XMLoadFloat4x3( &worldTransform );
         const SSceneMesh& mesh = scene.m_Meshes[ meshNode.m_Mesh ];
         commands->reserve( commands->size() + mesh.m_Sections.size() );
         for ( const SSceneMeshSection& section : mesh.m_Sections )
@@ -81,7 +69,7 @@ void GenerateMeshDrawCommands( const CScene& scene, const std::vector<XMFLOAT4X3
             commands->emplace_back();
             SMeshDrawCommand& newCommand = commands->back();
             newCommand.m_WorldMatrix = worldTransform;
-            scene.CalculateMeshSectionBoundingBox( section ).Transform( newCommand.m_BoundingBox, matrix );
+            newCommand.m_BoundingBox = meshSectionBoundingBoxes ? (*meshSectionBoundingBoxes)[ sectionIndex ] : BoundingBox();
             newCommand.m_PositionStream = TranslateSceneStream( scene, section.m_PositionStream );
             newCommand.m_NormalStream = TranslateSceneStream( scene, section.m_NormalStream );
             newCommand.m_TexcoordsStream = TranslateSceneStream( scene, section.m_TexcoordsTream );
@@ -107,6 +95,7 @@ void GenerateMeshDrawCommands( const CScene& scene, const std::vector<XMFLOAT4X3
                 newCommand.m_AlphaBlend = false;
                 newCommand.m_TwoSided = false;
             }
+            ++sectionIndex;
         }
     }
 }

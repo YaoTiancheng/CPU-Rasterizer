@@ -37,6 +37,51 @@ void CScene::FreeAll()
     m_MeshNodes.clear();
 }
 
+void CScene::CalculateNodeWorldTransforms( std::vector<XMFLOAT4X3>* transforms )
+{
+    transforms->reserve( transforms->size() + m_Nodes.size() );
+    for ( const SSceneNode& node : m_Nodes )
+    {
+        XMMATRIX worldMatrix = CalculateNodeWorldTransform( node );
+        transforms->emplace_back();
+        XMFLOAT4X3& matrix = transforms->back();
+        XMStoreFloat4x3( &matrix, worldMatrix );
+    }
+}
+
+void CScene::CalculateMeshSectionBoundingBoxes( std::vector<BoundingBox>* boxes )
+{
+    for ( int32_t meshNodeIndex : m_MeshNodes )
+    {
+        const SSceneNode& node = m_Nodes[ meshNodeIndex ];
+        const SSceneMesh& mesh = m_Meshes[ node.m_Mesh ];
+        boxes->reserve( boxes->size() + mesh.m_Sections.size() );
+        for ( const SSceneMeshSection& section : mesh.m_Sections )
+        {
+            boxes->emplace_back();
+            BoundingBox& box = boxes->back();
+            box = CalculateMeshSectionBoundingBox( section );
+        }
+    }
+}
+
+void CScene::TransformMeshSectionBoundingBoxes( const std::vector<XMFLOAT4X3>& transforms, std::vector<BoundingBox>& boxes )
+{
+    uint32_t sectionIndex = 0;
+    for ( int32_t meshNodeIndex : m_MeshNodes )
+    {
+        const SSceneNode& node = m_Nodes[ meshNodeIndex ];
+        const SSceneMesh& mesh = m_Meshes[ node.m_Mesh ];
+        for ( size_t section = 0; section < mesh.m_Sections.size(); ++section )
+        {
+            BoundingBox& box = boxes[ sectionIndex ];
+            const XMMATRIX matrix = XMLoadFloat4x3( &transforms[ meshNodeIndex ] );
+            box.Transform( box, matrix );
+            sectionIndex++;
+        }
+    }
+}
+
 BoundingBox CScene::CalculateMeshSectionBoundingBox( const SSceneMeshSection& section ) const
 {
     BoundingBox box( XMFLOAT3( 0.f, 0.f, 0.f ), XMFLOAT3( 0.f, 0.f, 0.f ) );
@@ -47,48 +92,6 @@ BoundingBox CScene::CalculateMeshSectionBoundingBox( const SSceneMeshSection& se
             (const XMFLOAT3*)( buffer.m_Data + section.m_PositionStream.m_ByteOffset ), section.m_PositionStream.m_ByteStride );
     }
     return box;
-}
-
-BoundingBox CScene::CalculateMeshBoundingBox( const SSceneMesh& mesh ) const
-{
-    BoundingBox box( XMFLOAT3( 0.f, 0.f, 0.f ), XMFLOAT3( 0.f, 0.f, 0.f ) );
-    if ( !mesh.m_Sections.empty() )
-    {
-        box = CalculateMeshSectionBoundingBox( mesh.m_Sections.front() );
-        for ( size_t i = 1; i < mesh.m_Sections.size(); ++i )
-        {
-            BoundingBox::CreateMerged( box, box, CalculateMeshSectionBoundingBox( mesh.m_Sections[ i ] ) );
-        }
-    }
-    return box;
-}
-
-BoundingBox CScene::CalculateMeshNodeBoundingBox( const SSceneNode& node ) const
-{
-    BoundingBox box( XMFLOAT3( 0.f, 0.f, 0.f ), XMFLOAT3( 0.f, 0.f, 0.f ) );
-    if ( node.m_Mesh != -1 )
-    {
-        XMMATRIX worldMatrix = CalculateNodeWorldTransform( node );
-        box = CalculateMeshBoundingBox( m_Meshes[ node.m_Mesh ] );
-        box.Transform( box, worldMatrix );
-    }
-    return box;
-}
-
-BoundingSphere CScene::CalculateBoundingSphere() const
-{
-    BoundingSphere sphere( XMFLOAT3( 0.f, 0.f, 0.f ), 0.f );
-    if ( !m_MeshNodes.empty() )
-    { 
-        BoundingBox box = CalculateMeshNodeBoundingBox( m_Nodes[ m_MeshNodes.front() ] );
-        for ( size_t i = 1; i < m_MeshNodes.size(); ++i )
-        {
-            const SSceneNode& node = m_Nodes[ m_MeshNodes[ i ] ];
-            BoundingBox::CreateMerged( box, box, CalculateMeshNodeBoundingBox( node ) );
-        }
-        BoundingSphere::CreateFromBoundingBox( sphere, box );
-    }
-    return sphere;
 }
 
 XMMATRIX __vectorcall CScene::CalculateNodeWorldTransform( const SSceneNode& node ) const

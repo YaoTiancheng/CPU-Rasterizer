@@ -67,13 +67,13 @@ public:
 
     void FreeAll();
 
+    void CalculateNodeWorldTransforms( std::vector<DirectX::XMFLOAT4X3>* transforms );
+
+    void CalculateMeshSectionBoundingBoxes( std::vector<DirectX::BoundingBox>* boxes );
+
+    void TransformMeshSectionBoundingBoxes( const std::vector<DirectX::XMFLOAT4X3>& transforms, std::vector<DirectX::BoundingBox>& boxes );
+
     DirectX::BoundingBox CalculateMeshSectionBoundingBox( const SSceneMeshSection& section ) const;
-
-    DirectX::BoundingBox CalculateMeshBoundingBox( const SSceneMesh& mesh ) const;
-
-    DirectX::BoundingBox CalculateMeshNodeBoundingBox( const SSceneNode& node ) const;
-
-    DirectX::BoundingSphere CalculateBoundingSphere() const;
 
     DirectX::XMMATRIX __vectorcall CalculateNodeWorldTransform( const SSceneNode& node ) const;
 
