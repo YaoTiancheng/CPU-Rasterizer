@@ -177,7 +177,7 @@ void CDemoApp_ModelViewer::OnUpdate()
     XMMATRIX viewMatrix = XMMatrixInverse( nullptr, cameraWorldMatrix );
 
     const float aspectRatio = (float)m_RenderTarget.m_Width / m_RenderTarget.m_Height;
-    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 2.f, 1000.f );
+    XMMATRIX projectionMatrix = XMMatrixPerspectiveFovLH( XMConvertToRadians( 40.0f ), aspectRatio, 1.f, 1000.f );
     XMStoreFloat4x4A( (XMFLOAT4X4A*)&matrix, projectionMatrix );
     Rasterizer::SetProjectionTransform( matrix );
 

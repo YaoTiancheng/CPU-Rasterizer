@@ -369,6 +369,62 @@ static void TransformVertices(
     }
 }
 
+inline static uint32_t ReadIndex( const uint8_t* indices, uint32_t location, uint32_t stride )
+{
+    indices += location * stride;
+    return s_IndexType == EIndexType::e16bit ? *( (uint16_t*)indices ) : *( (uint32_t*)indices ); 
+}
+
+inline static void WriteIndex( const uint8_t* indices, uint32_t location, uint32_t stride, uint32_t index )
+{
+    indices += location * stride;
+    if ( s_IndexType == EIndexType::e16bit )
+    { 
+        *( (uint16_t*)indices ) = (uint16_t)( index & 0xFFFF );
+    }
+    else
+    {
+        *( (uint32_t*)indices ) = index;
+    }
+}
+
+// Cull triangle who has any vertices passing by the near clip
+static void CullTriangles( const uint8_t* inZ, const uint8_t* inIndices, uint8_t* outIndices, uint32_t inStride, uint32_t outStride, uint32_t inIndexStride,
+    uint32_t outIndexStride, uint32_t trianglesCount, uint32_t& resultTriangleCount )
+{
+    resultTriangleCount = 0;
+    for ( uint32_t i = 0; i < trianglesCount; ++i )
+    {
+        uint32_t i0, i1, i2;
+        if ( inIndices != nullptr )
+        {
+            i0 = ReadIndex( inIndices, i * 3, inIndexStride ); 
+            i1 = ReadIndex( inIndices, i * 3 + 1, inIndexStride ); 
+            i2 = ReadIndex( inIndices, i * 3 + 2, inIndexStride );
+        }
+        else
+        {
+            i0 = i * 3;
+            i1 = i * 3 + 1;
+            i2 = i * 3 + 2;
+        }
+
+        const uint32_t offset0 = i0 * inStride, offset1 = i1 * inStride, offset2 = i2 * inStride;
+        // Read z as int, only the sign bit matters
+        const int32_t z0 = *(int32_t*)( inZ + offset0 );
+        const int32_t z1 = *(int32_t*)( inZ + offset1 );
+        const int32_t z2 = *(int32_t*)( inZ + offset2 );
+        const bool isCulled = ( z0 | z1 | z2 ) < 0;
+        if ( !isCulled )
+        {
+            WriteIndex( outIndices, resultTriangleCount * 3, outIndexStride, i0 );
+            WriteIndex( outIndices, resultTriangleCount * 3 + 1, outIndexStride, i1 );
+            WriteIndex( outIndices, resultTriangleCount * 3 + 2, outIndexStride, i2 );
+            ++resultTriangleCount;
+        }
+    }
+}
+
 template <bool UseTexture, bool UseVertexColor, bool UseNormal, bool UseViewPos>
 static void PerspectiveDivision( const uint8_t* inTex, const uint8_t* inColor,
     SAttributeStreamPtrs streamPtrs,
@@ -506,12 +562,6 @@ static inline float BarycentricInterplation( float attr0, float attr1, float att
     return attr0 * w0 + ( attr1 * w1 + ( attr2 * w2 ) );
 }
 
-inline static uint32_t GetIndex( const uint8_t* indices, uint32_t location, uint32_t stride )
-{
-    indices += location * stride;
-    return s_IndexType == EIndexType::e16bit ? *( (uint16_t*)indices ) : *( (uint32_t*)indices ); 
-}
-
 template <bool UseTexcoord, bool UseColor, bool UseNormal, bool UseViewPos>
 static void SetupTriangles( const STriangleSetupInput& input,
     const uint8_t* indices, uint32_t indexStride,
@@ -524,19 +574,9 @@ static void SetupTriangles( const STriangleSetupInput& input,
 
     for ( uint32_t i = 0; i < trianglesCount; ++i )
     {
-        uint32_t i0, i1, i2;
-        if ( indices != nullptr )
-        {
-            i0 = GetIndex( indices, i * 3, indexStride ); 
-            i1 = GetIndex( indices, i * 3 + 1, indexStride ); 
-            i2 = GetIndex( indices, i * 3 + 2, indexStride );
-        }
-        else
-        {
-            i0 = i * 3;
-            i1 = i0 + 1;
-            i2 = i1 + 1;
-        }
+        const uint32_t i0 = ReadIndex( indices, i * 3, indexStride ); 
+        const uint32_t i1 = ReadIndex( indices, i * 3 + 1, indexStride );
+        const uint32_t i2 = ReadIndex( indices, i * 3 + 2, indexStride );
 
         const uint32_t offset0 = i0 * inputStride, offset1 = i1 * inputStride, offset2 = i2 * inputStride;
         const SVertex v0( input.pos + offset0 ), v1( input.pos + offset1 ), v2( input.pos + offset2 );
@@ -1386,6 +1426,23 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
             s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexLayout.size, roundedUpVerticesCount );
     }
 
+    // Allocate intermediate triangle buffer
+    // Every triangle attribute needs 3 float: row start, row increment and vertical increment
+    const SAttributesLayout triangleLayout = ComputeAttributesLayout( s_PipelineState, sizeof( STriangleBaseAttributes ), false, 3 ); 
+    uint8_t* triangles = (uint8_t*)malloc( triangleLayout.size * trianglesCount );
+    SAttributeStreamPtrs triangleStreamPtrs = GetAttributeStreamPointers( triangles, triangleLayout );
+
+    const uint8_t* sourceIndices = useIndex ? s_StreamSourceIndex.m_Data + s_StreamSourceIndex.m_Offset + s_StreamSourceIndex.m_Stride * baseIndexLocation : nullptr;
+    const uint32_t indexStride = s_IndexType == EIndexType::e16bit ? 2 : 4;
+    uint8_t* indices = (uint8_t*)malloc( indexStride * trianglesCount * 3 );
+
+    // Triangle cull
+    {
+        uint32_t newTrianglesCount = 0;
+        CullTriangles( vertexStreamPtrs.z, sourceIndices, indices, vertexLayout.size, triangleLayout.size, s_StreamSourceIndex.m_Stride, indexStride, trianglesCount, newTrianglesCount );
+        trianglesCount = newTrianglesCount;
+    }
+
     // Perspective division
     {
         const uint8_t* inTexcoordStream = s_StreamSourceTex.m_Data + s_StreamSourceTex.m_Offset + s_StreamSourceTex.m_Stride * baseVertexLocation;
@@ -1394,18 +1451,12 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
             s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride, roundedUpVerticesCount );
     }
 
-    // Allocate intermediate triangle buffer
-    // Every triangle attribute needs 3 float: row start, row increment and vertical increment
-    const SAttributesLayout triangleLayout = ComputeAttributesLayout( s_PipelineState, sizeof( STriangleBaseAttributes ), false, 3 ); 
-    uint8_t* triangles = (uint8_t*)malloc( triangleLayout.size * trianglesCount );
-    SAttributeStreamPtrs triangleStreamPtrs = GetAttributeStreamPointers( triangles, triangleLayout );
-
     // Triangle setup
     {
-        const uint8_t* indices = useIndex ? s_StreamSourceIndex.m_Data + s_StreamSourceIndex.m_Offset + s_StreamSourceIndex.m_Stride * baseIndexLocation : nullptr;
-        s_TriangleSetupFunction( vertexStreamPtrs, indices, s_StreamSourceIndex.m_Stride, triangleStreamPtrs, vertexLayout.size, triangleLayout.size, trianglesCount );
+        s_TriangleSetupFunction( vertexStreamPtrs, indices, indexStride, triangleStreamPtrs, vertexLayout.size, triangleLayout.size, trianglesCount );
     }
 
+    free( indices );
     free( vertices );
 
     // Rasterize triangles
