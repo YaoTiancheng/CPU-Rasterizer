@@ -369,22 +369,43 @@ static void TransformVertices(
     }
 }
 
-inline static uint32_t ReadIndex( const uint8_t* indices, uint32_t location, uint32_t stride )
+inline static void ReadTriangleIndices( const uint8_t* indices, uint32_t location, uint32_t stride, uint32_t* i0, uint32_t* i1, uint32_t* i2 )
 {
     indices += location * stride;
-    return s_IndexType == EIndexType::e16bit ? *( (uint16_t*)indices ) : *( (uint32_t*)indices ); 
-}
-
-inline static void WriteIndex( const uint8_t* indices, uint32_t location, uint32_t stride, uint32_t index )
-{
-    indices += location * stride;
+    const uint8_t* indexPtr0 = indices;
+    const uint8_t* indexPtr1 = indices + stride;
+    const uint8_t* indexPtr2 = indices + stride + stride;
     if ( s_IndexType == EIndexType::e16bit )
-    { 
-        *( (uint16_t*)indices ) = (uint16_t)( index & 0xFFFF );
+    {
+        *i0 = *( (uint16_t*)indexPtr0 );
+        *i1 = *( (uint16_t*)indexPtr1 );
+        *i2 = *( (uint16_t*)indexPtr2 );
     }
     else
     {
-        *( (uint32_t*)indices ) = index;
+        *i0 = *( (uint32_t*)indexPtr0 );
+        *i1 = *( (uint32_t*)indexPtr1 );
+        *i2 = *( (uint32_t*)indexPtr2 );
+    }
+}
+
+inline static void WriteTriangleIndices( uint8_t* indices, uint32_t location, uint32_t stride, uint32_t i0, uint32_t i1, uint32_t i2 )
+{
+    indices += location * stride;
+    uint8_t* indexPtr0 = indices;
+    uint8_t* indexPtr1 = indices + stride;
+    uint8_t* indexPtr2 = indices + stride + stride;
+    if ( s_IndexType == EIndexType::e16bit )
+    {
+        *( (uint16_t*)indexPtr0 ) = (uint16_t)( i0 );
+        *( (uint16_t*)indexPtr1 ) = (uint16_t)( i1 );
+        *( (uint16_t*)indexPtr2 ) = (uint16_t)( i2 );
+    }
+    else
+    {
+        *( (uint32_t*)indexPtr0 ) = i0;
+        *( (uint32_t*)indexPtr1 ) = i1;
+        *( (uint32_t*)indexPtr2 ) = i2;
     }
 }
 
@@ -398,9 +419,7 @@ static void CullTriangles( const uint8_t* inZ, const uint8_t* inIndices, uint8_t
         uint32_t i0, i1, i2;
         if ( inIndices != nullptr )
         {
-            i0 = ReadIndex( inIndices, i * 3, inIndexStride ); 
-            i1 = ReadIndex( inIndices, i * 3 + 1, inIndexStride ); 
-            i2 = ReadIndex( inIndices, i * 3 + 2, inIndexStride );
+            ReadTriangleIndices( inIndices, i * 3, inIndexStride, &i0, &i1, &i2 );
         }
         else
         {
@@ -417,9 +436,7 @@ static void CullTriangles( const uint8_t* inZ, const uint8_t* inIndices, uint8_t
         const bool isCulled = ( z0 | z1 | z2 ) < 0;
         if ( !isCulled )
         {
-            WriteIndex( outIndices, resultTriangleCount * 3, outIndexStride, i0 );
-            WriteIndex( outIndices, resultTriangleCount * 3 + 1, outIndexStride, i1 );
-            WriteIndex( outIndices, resultTriangleCount * 3 + 2, outIndexStride, i2 );
+            WriteTriangleIndices( outIndices, resultTriangleCount * 3, outIndexStride, i0, i1, i2 );
             ++resultTriangleCount;
         }
     }
@@ -574,9 +591,8 @@ static void SetupTriangles( const STriangleSetupInput& input,
 
     for ( uint32_t i = 0; i < trianglesCount; ++i )
     {
-        const uint32_t i0 = ReadIndex( indices, i * 3, indexStride ); 
-        const uint32_t i1 = ReadIndex( indices, i * 3 + 1, indexStride );
-        const uint32_t i2 = ReadIndex( indices, i * 3 + 2, indexStride );
+        uint32_t i0, i1, i2;
+        ReadTriangleIndices( indices, i * 3, indexStride, &i0, &i1, &i2 );
 
         const uint32_t offset0 = i0 * inputStride, offset1 = i1 * inputStride, offset2 = i2 * inputStride;
         const SVertex v0( input.pos + offset0 ), v1( input.pos + offset1 ), v2( input.pos + offset2 );
