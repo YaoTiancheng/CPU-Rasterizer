@@ -16,6 +16,11 @@ struct SMeshDrawCommandInfo
 
 class CDemoApp_ModelViewer : public CDemoApp
 {
+    enum class ECameraMode
+    {
+        Orbit, Fly
+    };
+
     using CDemoApp::CDemoApp;
 
     virtual bool OnInit() override;
@@ -33,6 +38,7 @@ class CDemoApp_ModelViewer : public CDemoApp
     XMFLOAT3 m_CameraLookAt = { 0.f, 0.f, 0.f };
     float m_CameraDistance = 0.f;
     float m_CameraPitch = 0.f, m_CameraYall = 0.f;
+    ECameraMode m_CameraMode = ECameraMode::Orbit;
 };
 
 bool CDemoApp_ModelViewer::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam )
@@ -82,6 +88,10 @@ bool CDemoApp_ModelViewer::OnWndProc( HWND hWnd, UINT message, WPARAM wParam, LP
                 }
             }
         }
+        else if ( wParam == 'C' )
+        {
+            m_CameraMode = m_CameraMode == ECameraMode::Orbit ? ECameraMode::Fly : ECameraMode::Orbit;
+        }
         break;
     }
     return false;
@@ -105,7 +115,7 @@ void CDemoApp_ModelViewer::ComputeCameraLookAtAndDistance( const std::vector<Bou
 
 void CDemoApp_ModelViewer::UpdateCamera()
 {
-    const float cameraOrbitingSensitivity = XMConvertToRadians( 1.f );
+    const float cameraOrbitingSensitivity = XMConvertToRadians( 1.f ) * ( m_CameraMode == ECameraMode::Orbit ? 1 : -1 );
     if ( GetAsyncKeyState( VK_UP ) )
     {
         m_CameraPitch += cameraOrbitingSensitivity;
@@ -124,21 +134,52 @@ void CDemoApp_ModelViewer::UpdateCamera()
     }
 
     const float cameraMoveSensitivity = 0.04f;
-    if ( GetAsyncKeyState( VK_SHIFT ) )
+    if ( GetAsyncKeyState( VK_SUBTRACT ) )
     {
         m_CameraDistance = std::max( 0.f, m_CameraDistance - cameraMoveSensitivity );
     }
-    else if ( GetAsyncKeyState( VK_CONTROL ) )
+    else if ( GetAsyncKeyState( VK_ADD ) )
     {
         m_CameraDistance += cameraMoveSensitivity;
     }
+
+    const XMMATRIX cameraRotationMatrix = XMMatrixRotationRollPitchYaw( m_CameraPitch, m_CameraYall, 0.f );
+    const XMVECTOR cameraRight = XMVector3Transform( g_XMIdentityR0, cameraRotationMatrix );
+    const XMVECTOR cameraUp = XMVector3Transform( g_XMIdentityR1, cameraRotationMatrix );
+    const XMVECTOR cameraForward = XMVector3Transform( g_XMIdentityR2, cameraRotationMatrix );
+    XMVECTOR cameraLookAt = XMLoadFloat3( &m_CameraLookAt );
+    if ( GetAsyncKeyState( 'A' ) )
+    {
+        cameraLookAt -= cameraRight * cameraMoveSensitivity;
+    }
+    else if ( GetAsyncKeyState( 'D' ))
+    {
+        cameraLookAt += cameraRight * cameraMoveSensitivity;
+    }
+    if ( GetAsyncKeyState( 'W' ) )
+    {
+        cameraLookAt += cameraForward * cameraMoveSensitivity;
+    }
+    else if ( GetAsyncKeyState( 'S' ))
+    {
+        cameraLookAt -= cameraForward * cameraMoveSensitivity;
+    }
+    if ( GetAsyncKeyState( 'Q' ) )
+    {
+        cameraLookAt += cameraUp * cameraMoveSensitivity;
+    }
+    else if ( GetAsyncKeyState( 'E' ))
+    {
+        cameraLookAt -= cameraUp * cameraMoveSensitivity;
+    }
+    XMStoreFloat3( &m_CameraLookAt, cameraLookAt );
 }
 
 void CDemoApp_ModelViewer::OnUpdate()
 {
     UpdateCamera();
 
-    XMMATRIX cameraWorldMatrix = XMMatrixTranslation( 0.f, 0.f, -m_CameraDistance );
+    XMMATRIX cameraWorldMatrix = XMMatrixTranslation( 0.f, 0.f, m_CameraMode == ECameraMode::Orbit ? -m_CameraDistance : 0.f );
     cameraWorldMatrix = XMMatrixMultiply( cameraWorldMatrix, XMMatrixRotationRollPitchYaw( m_CameraPitch, m_CameraYall, 0.f ) );
     cameraWorldMatrix = XMMatrixMultiply( cameraWorldMatrix, XMMatrixTranslation( m_CameraLookAt.x, m_CameraLookAt.y, m_CameraLookAt.z ) );
 
