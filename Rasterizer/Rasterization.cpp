@@ -410,7 +410,7 @@ inline static void WriteTriangleIndices( uint8_t* indices, uint32_t location, ui
 }
 
 // Cull triangle who has any vertices passing by the near clip
-static void CullTriangles( const uint8_t* inZ, const uint8_t* inIndices, uint8_t* outIndices, uint32_t inStride, uint32_t outStride, uint32_t inIndexStride,
+static void CullTriangles( const uint8_t* inZ, const uint8_t* inIndices, uint8_t* outIndices, uint32_t inStride, uint32_t inIndexStride,
     uint32_t outIndexStride, uint32_t trianglesCount, uint32_t& resultTriangleCount )
 {
     resultTriangleCount = 0;
@@ -1442,12 +1442,6 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
             s_StreamSourcePos.m_Stride, s_StreamSourceNormal.m_Stride, vertexLayout.size, roundedUpVerticesCount );
     }
 
-    // Allocate intermediate triangle buffer
-    // Every triangle attribute needs 3 float: row start, row increment and vertical increment
-    const SAttributesLayout triangleLayout = ComputeAttributesLayout( s_PipelineState, sizeof( STriangleBaseAttributes ), false, 3 ); 
-    uint8_t* triangles = (uint8_t*)malloc( triangleLayout.size * trianglesCount );
-    SAttributeStreamPtrs triangleStreamPtrs = GetAttributeStreamPointers( triangles, triangleLayout );
-
     const uint8_t* sourceIndices = useIndex ? s_StreamSourceIndex.m_Data + s_StreamSourceIndex.m_Offset + s_StreamSourceIndex.m_Stride * baseIndexLocation : nullptr;
     const uint32_t indexStride = s_IndexType == EIndexType::e16bit ? 2 : 4;
     uint8_t* indices = (uint8_t*)malloc( indexStride * trianglesCount * 3 );
@@ -1455,7 +1449,7 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
     // Triangle cull
     {
         uint32_t newTrianglesCount = 0;
-        CullTriangles( vertexStreamPtrs.z, sourceIndices, indices, vertexLayout.size, triangleLayout.size, s_StreamSourceIndex.m_Stride, indexStride, trianglesCount, newTrianglesCount );
+        CullTriangles( vertexStreamPtrs.z, sourceIndices, indices, vertexLayout.size, s_StreamSourceIndex.m_Stride, indexStride, trianglesCount, newTrianglesCount );
         trianglesCount = newTrianglesCount;
     }
 
@@ -1466,6 +1460,12 @@ static void InternalDraw( uint32_t baseVertexLocation, uint32_t baseIndexLocatio
         s_PerspectiveDivisionFunction( inTexcoordStream, inColorStream, vertexStreamPtrs, vertexLayout.size,
             s_StreamSourceTex.m_Stride, s_StreamSourceColor.m_Stride, roundedUpVerticesCount );
     }
+
+    // Allocate intermediate triangle buffer
+    // Every triangle attribute needs 3 float: row start, row increment and vertical increment
+    const SAttributesLayout triangleLayout = ComputeAttributesLayout( s_PipelineState, sizeof( STriangleBaseAttributes ), false, 3 ); 
+    uint8_t* triangles = (uint8_t*)malloc( triangleLayout.size * trianglesCount );
+    SAttributeStreamPtrs triangleStreamPtrs = GetAttributeStreamPointers( triangles, triangleLayout );
 
     // Triangle setup
     {
